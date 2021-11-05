@@ -1,0 +1,1522 @@
+---
+title: "Luypaert et al. (2021) - Supplementary Material 3"
+author: '"Thomas Luypaert - Norwegian University of Life Sciences"'
+date: "9/23/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This RMarkdown file contains the code which accompanies the supplementary material S3 provided in Luypaert et al. (2021). 
+
+## Loading the required packages & downloading the raw data
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE}
+
+# Loading packages
+
+library(readr)
+library(data.table)
+library(knitr)
+library(hilldiv)
+library(ggplot2)
+library(viridis)
+library(dataone)
+library(iNEXT)
+library(devtools)
+library(dataone)
+library(dplyr)
+library(soundscapeR)
+library(ggpubr)
+library(ggforce)
+library(scales)
+library(patchwork)
+library(codyn)
+library(ggpmisc)
+library(purrr)
+library(magrittr)
+
+```
+
+```{r}
+
+# Downloading data from the KNB repository
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+queryParamList <- list(q="id:doi*10.5063/F1MS3R6W", fl="id,title")
+result <- query(mn, solrQuery=queryParamList, as="data.frame")
+packagePid <- result[1,1]
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+bagitFileName <- getPackage(mn, id=packagePid)
+bagitFileName <- gsub("\\\\", "/", as.character(bagitFileName))
+
+to_unzip <- unzip(zipfile = bagitFileName, list = TRUE)
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[c(3, 5, 7, 8),1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+list.dirs.depth.n <- function(p, n) {
+  res <- list.dirs(p, recursive = FALSE)
+  if (n > 1) {
+    add <- list.dirs.depth.n(res, n-1)
+    c(res, add)
+  } else {
+    res
+  }
+}
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[4,1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = locations[1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted", "/data/",gsub("\\.zip", "", basename(locations[1]))))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+```
+
+## 0. Compiling the taxonomic richness data
+
+### 0.1. Anuran data
+
+The anuran data was derived from the aural and visual identification of anuran vocalisations by a trained expert (Gabriel Masseli) using the RFCx ARBIMON Visualizer Tool (ENTER LINK). All species identities were cross-verified by second observer (Igor Kaefer) to ensure accuracy. The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- read_csv(locations[4], show_col_types = FALSE)
+
+```
+
+#### Remove rows containing 'None' for the species
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[!frog_man$species=="None",]
+
+```
+
+#### Remove all the riparian sites from the data
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[-grep("_Rip", frog_man$plot), ]
+
+```
+
+#### Subset to contain only the plots used in the soundscape study
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man$plot <- gsub("-", "_", frog_man$plot)
+frog_man$plot <- gsub("Waba", "WABA", frog_man$plot)
+
+wanted <- c("Abusado",
+            "Adeus_A", 
+            "Adeus_B",
+            "Aline",
+            "Andre",
+            "Arrepiado", 
+            "Bacaba_B",
+            "Beco_do_Catitu_A",
+            "Beco_do_Catitu_B",
+            "Beco_do_Catitu_D",
+            "Beco_do_Catitu_E",
+            "Cafundo",
+            "CF_Grid_CampTrail_A",
+            "CF_Grid_NS3_1200", 
+            "CF_Loreno_A", 
+            "CF_Loreno_B", 
+            "CF_WABA_B", 
+            "CF_WABA_C", 
+            "Cipoal_A", 
+            "Cipoal_B", 
+            "Cipoal_C", 
+            "Coata", 
+            "Formiga", 
+            "Furo_de_Santa_Luzia_B", 
+            "Furo_de_Santa_Luzia_C", 
+            "Fuzaca_B", 
+            "Fuzaca_C", 
+            "Fuzaca_D", 
+            "Garrafa", 
+            "Gaviao_real_A", 
+            "Gaviao_real_B", 
+            "Gaviao_real_C", 
+            "Gaviao_real_D", 
+            "Jabuti_A", 
+            "Jabuti_B", 
+            "Jabuti_C", 
+            "Jiquitaia", 
+            "Joaninha", 
+            "Martelo_B", 
+            "Martelo_C", 
+            "Mascote_A1", 
+            "Mascote_A2", 
+            "Mascote_B1", 
+            "Mascote_B2", 
+            "Moita_A", 
+            "Moita_B", 
+            "Palhal", 
+            "Panema", 
+            "Pe_Torto", 
+            "Piquia", 
+            "Pontal_B", 
+            "Pontal_C", 
+            "Porto_Seguro_B", 
+            "Porto_Seguro_C", 
+            "Porto_Seguro_D", 
+            "Relogio_B", 
+            "Sapupara_A", 
+            "Sapupara_B", 
+            "Torem", 
+            "Tristeza_A", 
+            "Tristeza_B", 
+            "Tristeza_C", 
+            "Tucumari_A", 
+            "Tucumari_B", 
+            "Tucumari_C")          
+
+frog_man <- frog_man[with(frog_man, plot %in% wanted ),]
+
+```
+
+#### Count the number of unique frog species per site 
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+frog_df_richness <- aggregate(data = frog_man,
+                      species ~ site,
+                      function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+colnames(frog_df_richness) <- c("site", "anuran_richness")
+frog_df_richness$site <- toupper(frog_df_richness$site)
+
+knitr::kable(frog_df_richness, caption = "Anuran taxonomic species richness per island", align = "l") 
+
+```
+
+
+### 0.2. Avian data 
+
+The avian data was derived from the pattern matching algorithm available on the RFCx ARBIMON Platform: <https://arbimon.rfcx.org/project/balbina>, combined with visual and aural verification by a trained expert (Marconi Campos-Cerqueira). The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+bird_files <- list.files(path = locations[3], full.names = TRUE)
+
+bird_list <- vector("list", length = length(bird_files))
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- read_csv(bird_files[i], show_col_types = FALSE)
+  
+}
+
+names(bird_list) <- gsub(".csv", "", basename(bird_files))
+
+```
+
+#### Modify the site names to match the sites in the soundscape study
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$site <- gsub('\\.', '_', bird_list[[i]]$site)
+  bird_list[[i]]$site <- gsub('-', '_', bird_list[[i]]$site)
+  
+}
+
+
+```
+
+#### Filter the data by sites in the soundscape study
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][with(bird_list[[i]], site %in% wanted ),]
+  
+}
+
+
+```
+
+#### Filter to retain only the verified records 
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][bird_list[[i]]$validated=="present",]
+  
+}
+
+```
+
+#### Add a species column to the data and rbind 
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$species <- names(bird_list)[i]
+  
+}
+
+bird_df <- rbindlist(bird_list)
+
+```
+
+#### Make the species names uniform across call types
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df$species <- gsub("1|2|_call|_duet|_nocturnal", "", bird_df$species)
+
+bird_df$species[bird_df$species=="Glyphorynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+bird_df$species[bird_df$species=="Glyphorhynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+```
+
+#### Make the plot names uniform per island
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+island_name <- bird_df$site
+island_name <- gsub(pattern = "_A$", "", island_name)
+island_name <- gsub(pattern = "_A.$", "", island_name)
+island_name <- gsub(pattern = "_B$", "", island_name)
+island_name <- gsub(pattern = "_B.$", "", island_name)
+island_name <- gsub(pattern = "_C$", "", island_name)
+island_name <- gsub(pattern = "_D$", "", island_name)
+island_name <- gsub(pattern = "_E$", "", island_name)
+island_name <- gsub(pattern = "_CampTrail$", "", island_name)
+island_name <- gsub(pattern = "_NS3_1200$", "", island_name)
+
+bird_df$site <- island_name
+
+```
+
+#### Count the number of unique species per island 
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df_richness <- aggregate(data = bird_df,
+                     species ~ site,
+                     function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+colnames(bird_df_richness) <- c("site", "avian_richness")
+
+bird_df_richness$site <- toupper(bird_df_richness$site)
+
+knitr::kable(bird_df_richness, caption = "Avian taxonomic species richness per island", align = "l") 
+
+```
+
+
+### 0.3. Monkey data
+
+The monkey taxonomic richness data was compiled from a previous study in the area which collected taxonomic data for terresrial vertebrates (Benchimol & Peres 2015). For more information, consult the main manuscript of Luypaert et al. (2021) or head on over to the original paper: <https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0129818#sec014>
+
+#### Load the data into R
+
+```{r}
+
+monkey_df_richness <- read_csv(locations[6], show_col_types = FALSE)
+
+colnames(monkey_df_richness) <- c("site", "primate_richness")
+
+monkey_df_richness$site <- gsub("-", "_", monkey_df_richness$site)
+
+monkey_df_richness$site <- toupper(monkey_df_richness$site)
+
+knitr::kable(monkey_df_richness, caption = "Primate taxonomic richness per island")
+
+```
+
+
+### 0.4. Compiling the taxonomic richness data into a single metric
+
+```{r}
+
+total_richness <- merge(
+  merge(frog_df_richness, bird_df_richness, by="site"), 
+  monkey_df_richness, by="site")
+
+total_richness$total_tax <- total_richness$anuran_richness + total_richness$avian_richness + total_richness$primate_richness
+
+knitr::kable(total_richness, caption = "Total taxnomic richness of soniferous species per island")
+
+```
+
+
+## 2. Assessing the effect of threshold choice on the functional soundscape richness – taxonomic richness relationship
+
+Choosing the binarization threshold which is used to obtain detection / non-detection values for each OSU in the 24-hour functional trait space constitutes an import step in our workflow. The choice of this threshold value will depend on the sound transmission characteristics of the habitat under investigation, and the amount and type of background noise in the environment. The ideal threshold value will remove the influence of low-amplitude and transient or short-duration noise on the functional soundscape diversity metrics described in this study, thus increasing the sensitivity to the biophonic taxonomic diversity. Several thresholding approaches exist to achieve this objective. Here, we investigated various approaches and how they influence the observed relationship between the functional soundscape richness and the taxonomic richness of soniferous species. The preferred thresholding method is the one which increases the sensitivity of the proposed metrics to the diversity of soniferous species. 
+
+### 2.1. Loading the chronologically concatenated CVR-files from before
+
+Since we already computed the CVR-indices and concatenated then chronologically in the RMarkdown of the case study, to save time, here we will simply load these data into R. 
+
+```{r, echo = FALSE, results='hide', error=FALSE, warning=FALSE, message=FALSE}
+
+load(locations[5])
+
+merged_csv_list_1_5 <- merged_csv_list_256
+
+```
+
+### 2.1. Applying a constant threshold value across all sites 
+
+Since we already loaded the chronologically concatenated CVR-index dataframes per site, we will start here at the binarisation step. First, we'll try a range of threshold values between 0.01-0.5, the threshold value being equal for all sites in the study. 
+
+#### Binarisation of CVR-index data using a range of thresholds
+
+```{r}
+
+thresh_values_1 <- seq(0.01, 0.5, 0.01)
+
+thresh_list_1 <- vector("list", length = length(thresh_values_1))
+
+for (i in 1:length(thresh_list_1)){
+  
+  thresh_list_1[[i]] <- merged_csv_list_1_5
+  
+}
+
+names(thresh_list_1) <- thresh_values_1
+
+for (i in 1:length(thresh_list_1)){
+  
+  for (j in 1:length(thresh_list_1[[i]])){
+    
+    thresh_list_1[[i]][[j]] <- binarize_df(merged_soundscape = thresh_list_1[[i]][[j]], method = "custom", value = thresh_values_1[i])
+    
+  }
+  
+  names(thresh_list_1[[i]]) <- names(merged_csv_list_1_5)
+  
+}
+
+
+```
+
+#### Separating the OSUs into 24-hour samples of acoustic trait space + subsetting to 14,300 Hz
+
+```{r}
+
+sampling_duration_list_threshold_1 <- vector("list", length(thresh_list_1))
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  sampling_duration_list_threshold_1[[i]] <- vector("list", length(thresh_list_1[[i]]))
+  
+}
+
+duration_start <- seq(1, 2593, 288)
+duration_end <- seq(288, 2880, 288)
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_1[[i]])){
+    
+    sampling_duration_list_threshold_1[[i]][[j]] <- vector("list", length = length(duration_end))
+    
+    for (k in 1:length(duration_start)){
+      
+      sampling_duration_list_threshold_1[[i]][[j]][[k]] <- thresh_list_1[[i]][[j]]
+      
+    }
+    
+    names(sampling_duration_list_threshold_1[[i]][[j]]) <- seq(1, length(duration_start), 1)
+    
+  }
+  
+  names(sampling_duration_list_threshold_1[[i]]) <- names(merged_csv_list_1_5)
+  
+}
+
+names(sampling_duration_list_threshold_1) <- thresh_values_1
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_1[[i]])){
+    
+    for (k in 1:length(sampling_duration_list_threshold_1[[i]][[j]])){
+      
+      if(ncol(sampling_duration_list_threshold_1[[i]][[j]][[k]]@merged_df) >= duration_end[k]){
+        
+        sampling_duration_list_threshold_1[[i]][[j]][[k]]@merged_df <- sampling_duration_list_threshold_1[[i]][[j]][[k]]@merged_df[46:128,duration_start[k]:duration_end[k]]
+        
+        sampling_duration_list_threshold_1[[i]][[j]][[k]]@binarized_df <- sampling_duration_list_threshold_1[[i]][[j]][[k]]@binarized_df[46:128,duration_start[k]:duration_end[k]]
+        
+      }
+      
+      else{
+        
+        sampling_duration_list_threshold_1[[i]][[j]][[k]] <- as.list(c(NA))
+        
+      }
+      
+    }
+    
+  }
+  
+}
+
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_1[[i]])){
+    
+    if (length(which(sapply(sampling_duration_list_threshold_1[[i]], function(x) is.list(x))))==0){
+      
+      sampling_duration_list_threshold_1[[i]][[j]] <- sampling_duration_list_threshold_1[[i]][[j]]
+    }
+    
+    else{
+      
+      sampling_duration_list_threshold_1[[i]][[j]] <- sampling_duration_list_threshold_1[[i]][[j]][-which(sapply(sampling_duration_list_threshold_1[[i]][[j]], function(x) is.list(x)))]
+      
+    }
+  }
+}
+
+names(sampling_duration_list_threshold_1) <- thresh_values_1
+
+
+```
+
+
+#### Converting the data into an OSU-by-sample incidence matrix
+
+```{r}
+
+
+inc_mat_threshold_1 <- vector("list", length(sampling_duration_list_threshold_1))
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  inc_mat_threshold_1[[i]] <- vector("list", length(sampling_duration_list_threshold_1[[i]]))
+  
+}
+
+for (i in 1:length(sampling_duration_list_threshold_1)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_1[[i]])){
+    
+    inc_mat_threshold_1[[i]][[j]] <- vector("list", length(sampling_duration_list_threshold_1[[i]][[j]]))
+    
+  }
+  
+}
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  for (j in 1:length(inc_mat_threshold_1[[i]])){
+    
+    for (k in 1:length(inc_mat_threshold_1[[i]][[j]])){
+      
+      inc_mat_threshold_1[[i]][[j]][[k]] <- unlist(sampling_duration_list_threshold_1[[i]][[j]][[k]]@binarized_df)
+      
+      sampling_duration_list_threshold_1[[i]][[j]][[k]] <- NA
+      
+    }
+    
+    inc_mat_threshold_1[[i]][[j]] <- as.data.frame(t(data.frame(do.call(rbind, inc_mat_threshold_1[[i]][[j]]))))
+    
+    rownames(inc_mat_threshold_1[[i]][[j]]) <-  paste0("OSU", seq(1, nrow(inc_mat_threshold_1[[i]][[j]]), 1))
+    
+    inc_mat_threshold_1[[i]][[j]] <- as.matrix(inc_mat_threshold_1[[i]][[j]])
+    
+    sampling_duration_list_threshold_1[[i]][[j]] <- NA
+    
+  }
+  
+}
+
+sampling_duration_list_threshold_1 <- NA
+
+names(inc_mat_threshold_1) <- thresh_values_1
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  names(inc_mat_threshold_1[[i]]) <- wanted
+  
+}
+
+
+
+```
+
+#### Combine OSU incidence matrices per island 
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE, error=FALSE}
+
+list_name <- names(inc_mat_threshold_1[[1]])
+list_name <- gsub(pattern = "_A$", "", list_name)
+list_name <- gsub(pattern = "_A.$", "", list_name)
+list_name <- gsub(pattern = "_B$", "", list_name)
+list_name <- gsub(pattern = "_B.$", "", list_name)
+list_name <- gsub(pattern = "_C$", "", list_name)
+list_name <- gsub(pattern = "_D$", "", list_name)
+list_name <- gsub(pattern = "_E$", "", list_name)
+list_name <- gsub(pattern = "_CampTrail$", "", list_name)
+list_name <- gsub(pattern = "_NS3_1200$", "", list_name)
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  names(inc_mat_threshold_1[[i]]) <- list_name
+  
+}
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  inc_mat_threshold_1[[i]] <- split(inc_mat_threshold_1[[i]], names(inc_mat_threshold_1[[i]])) %>% map(cbind.data.frame)
+  
+}
+
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  for (j in 1:length(inc_mat_threshold_1[[i]])){
+    
+    inc_mat_threshold_1[[i]][[j]] <- as.matrix(inc_mat_threshold_1[[i]][[j]])
+    
+  }
+  
+}
+
+```
+
+
+#### Rarefaction 8 sampling days and calculate the functional soundscape diversity metrics 
+  
+```{r, echo = FALSE, results='hide', error=FALSE}
+
+rarefied_sounddiv_threshold_1 <- inc_mat_threshold_1
+
+for (i in 1:length(rarefied_sounddiv_threshold_1)){
+  
+  for (j in 1:length(rarefied_sounddiv_threshold_1[[i]])){
+    
+    rarefied_sounddiv_threshold_1[[i]][[j]] <- NA
+    
+  }
+  
+}
+
+
+for (i in 1:length(inc_mat_threshold_1)){
+  
+  for (j in 1:length(inc_mat_threshold_1[[i]])){
+    
+    rarefied_sounddiv_threshold_1[[i]][[j]] <- estimateD(x = inc_mat_threshold_1[[i]][[j]], 
+                                             datatype = "incidence_raw",
+                                             base =  "size",
+                                             level = 8
+    )
+    
+    rarefied_sounddiv_threshold_1[[i]][[j]] <- distinct(rarefied_sounddiv_threshold_1[[i]][[j]][,2:ncol(rarefied_sounddiv_threshold_1[[i]][[j]])])
+    
+    rarefied_sounddiv_threshold_1[[i]][[j]]$site <- names(rarefied_sounddiv_threshold_1[[i]])[j]
+    
+    
+  }
+  
+  inc_mat_threshold_1[[i]] <- NA
+  
+  rarefied_sounddiv_threshold_1[[i]] <- rbindlist(rarefied_sounddiv_threshold_1[[i]])
+  
+}
+
+
+rarefied_sounddiv_threshold_1_q0 <- rarefied_sounddiv_threshold_1
+
+for (i in 1:length(rarefied_sounddiv_threshold_1_q0)){
+  
+  rarefied_sounddiv_threshold_1_q0[[i]] <- subset(rarefied_sounddiv_threshold_1_q0[[i]], 
+                                        rarefied_sounddiv_threshold_1_q0[[i]]$order==0)
+  
+}
+
+names(rarefied_sounddiv_threshold_1_q0) <- thresh_values_1
+
+for (i in 1:length(rarefied_sounddiv_threshold_1_q0)){
+  
+  rarefied_sounddiv_threshold_1_q0[[i]]$threshold <- thresh_values_1[i]
+  
+}
+
+rarefied_sounddiv_threshold_1_q0_total <- rbindlist(rarefied_sounddiv_threshold_1_q0)
+
+```
+
+#### Assessing which constant threshold value yield the most normal distribution
+
+```{r}
+
+for (i in 1:length(rarefied_sounddiv_threshold_1_q0)){
+  
+  rarefied_sounddiv_threshold_1_q0[[i]] <- rarefied_sounddiv_threshold_1_q0[[i]][,-c(1,2,3)]
+  
+}
+
+
+# Calculate normality of data 
+
+normal_df <- vector("list", length(rarefied_sounddiv_threshold_1_q0))
+
+for (i in 1:length(normal_df)){
+  
+  normal_df[[i]] <- as.data.frame(t(as.data.frame(
+    c(shapiro.test(rarefied_sounddiv_threshold_1_q0[[i]]$qD)$statistic,
+      shapiro.test(rarefied_sounddiv_threshold_1_q0[[i]]$qD)$p.value)))
+  )
+  
+  normal_df[[i]]$threshold <- names(rarefied_sounddiv_threshold_1_q0)[i]
+  
+  colnames(normal_df[[i]]) <- c("w", "p", "threshold")
+  
+}
+
+normal_df <- rbindlist(normal_df)
+
+# Check which values are insignificant
+
+print(normal_df[which(normal_df$p < 0.05),])
+
+# Make plots
+
+shap_p <- 
+  
+  ggplot(normal_df, aes(as.numeric(threshold), as.numeric(p))) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=-Inf, xmax=0.03,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=0.03, xmax=0.34,
+           fill = "palegreen", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=0.34, xmax=Inf,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  geom_vline(aes(xintercept= as.numeric(normal_df[which(normal_df$p == max(normal_df$p)),]$threshold)), 
+             linetype="dashed", 
+             color="darkred", 
+             size=1) +
+  
+  geom_line(size=1) +
+  
+  geom_point(shape=21, 
+             fill="white", 
+             stroke=1.5, 
+             size=2, 
+             color="black") +
+  
+  theme_classic() + 
+  
+  xlab("") + 
+  
+  ylab("Shapiro-Wilk p-value \n")+
+  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12), 
+        axis.title.x = element_text(size=14), 
+        axis.title.y = element_text(size=14)) +
+  
+  scale_y_continuous(
+    labels = scales::number_format(accuracy = 0.01,
+                                   decimal.mark = '.'), 
+    limits=c(0, 1))+
+  
+  annotate("text", 
+           x = 0.5, 
+           y = 0.98, 
+           label = "A.", 
+           size=9, 
+           fontface=2)
+
+shap_W <- 
+  
+  ggplot(normal_df, aes(as.numeric(threshold), as.numeric(w))) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=-Inf, xmax=0.03,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=0.03, xmax=0.34,
+           fill = "palegreen", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf, 
+           xmin=0.34, xmax=Inf,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  geom_vline(aes(xintercept=as.numeric(normal_df[which(normal_df$p == max(normal_df$p)),]$threshold)), 
+             linetype="dashed", 
+             color="darkred", 
+             size=1) +
+  
+  geom_line(size=1) +
+  
+  geom_point(shape=21, 
+             fill="white", 
+             stroke=1.5, 
+             size=2, 
+             color="black") +
+  
+  theme_classic() + 
+  
+  xlab("\n Binarization threshold value") + 
+  
+  ylab("Shapiro-Wilk W \n") + 
+  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12), 
+        axis.title.x = element_text(size=14), 
+        axis.title.y = element_text(size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(), 
+        strip.text = element_text(size = 14, face="bold")) + 
+  
+  annotate("text", 
+           x = 0.5, 
+           y = 0.98, 
+           label = "B.", 
+           size=9, 
+           fontface=2) + 
+  
+  scale_y_continuous(
+    labels = scales::number_format(accuracy = 0.01,
+                                   decimal.mark = '.'), 
+    limits = c(0, 1.0))
+
+combined_normal <- shap_p/shap_W
+
+```
+
+```{r correlation_plot, fig.width=15, fig.height=15, dpi=600}
+plot(combined_normal)
+```
+
+#### Assessing which constant threshold value yields the highest correlation with the taxonomic diversity of sonif species
+
+```{r}
+
+  # Merge together with metadata
+
+rarefied_sounddiv_threshold_1_q0_total$site <- toupper(rarefied_sounddiv_threshold_1_q0_total$site)
+
+rarefied_sounddiv_threshold_1_q0_total <- merge(x=rarefied_sounddiv_threshold_1_q0_total, 
+                              y = total_richness, 
+                              by="site")
+
+# Make a new correlation dataframe
+
+cor_list <- vector("list", length(unique(rarefied_sounddiv_threshold_1_q0_total$threshold)))
+
+for (i in 1:length(cor_list)){
+  
+  cor_list[[i]] <- as.data.frame(
+    t(as.data.frame(
+      c(
+        
+        cor.test(x = subset(rarefied_sounddiv_threshold_1_q0_total,
+                        rarefied_sounddiv_threshold_1_q0_total$threshold==unique(rarefied_sounddiv_threshold_1_q0_total$threshold)[i])$qD,
+             y = subset(rarefied_sounddiv_threshold_1_q0_total,
+                      rarefied_sounddiv_threshold_1_q0_total$threshold==unique(rarefied_sounddiv_threshold_1_q0_total$threshold)[i])$total_tax)$p.value,
+        
+        cor.test(x = subset(rarefied_sounddiv_threshold_1_q0_total,
+                        rarefied_sounddiv_threshold_1_q0_total$threshold==unique(rarefied_sounddiv_threshold_1_q0_total$threshold)[i])$qD,
+             y = subset(rarefied_sounddiv_threshold_1_q0_total,
+                      rarefied_sounddiv_threshold_1_q0_total$threshold==unique(rarefied_sounddiv_threshold_1_q0_total$threshold)[i])$total_tax)$estimate
+        
+  ))))
+  
+  cor_list[[i]]$threshold <- unique(rarefied_sounddiv_threshold_1_q0_total$threshold)[i]
+  
+  colnames(cor_list[[i]]) <- c("p", "R2", "threshold")
+  
+}
+
+cor_list <- rbindlist(cor_list)
+
+# Check which values are above 0.05
+
+cor_list[which(cor_list$p > 0.05),]
+
+# Check the minimum p-value and maximum R^2 value
+
+cor_list[which(cor_list$p == min(cor_list$p)),]
+cor_list[which(cor_list$R2 == max(cor_list$R2)),]
+
+# Make correlation plots
+
+correlation_r2 <- 
+  ggplot(cor_list, aes(threshold, R2))+
+  
+  annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf , 
+           xmin=-Inf, xmax=0.31,
+           fill = "palegreen", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf , ymax=Inf, 
+           xmin=0.31, xmax=Inf,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  geom_vline(aes(xintercept=as.numeric(cor_list[which(cor_list$p == min(cor_list$p)),]$threshold)),
+             linetype="dashed",
+             color="darkred", 
+             size=1) +
+  
+  geom_line(size=1) +
+  
+  geom_point(shape=21, 
+             size=2, 
+             stroke=1, 
+             fill="white", 
+             color="black") +
+  
+  theme_classic() +
+  
+  xlab("") +
+  
+  ylab("Pearson correlation coefficient \n") +
+  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12), 
+        axis.title.x = element_text(size=14), 
+        axis.title.y = element_text(size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(), 
+        strip.text = element_text(size = 14, face="bold")) + 
+  
+  annotate("text", 
+           x = 0.5, 
+           y = 0.84, 
+           label = "A.", 
+           size=9, 
+           fontface=2) + 
+  
+  scale_y_continuous(
+    labels = scales::number_format(accuracy = 0.01,
+                                   decimal.mark = '.'))
+
+correlation_p <- 
+  ggplot(cor_list, aes(threshold, p)) +
+  
+   annotate(geom = "rect", 
+           ymin=-Inf, ymax=Inf , 
+           xmin=-Inf, xmax=0.31,
+           fill = "palegreen", 
+           alpha = 0.2) +
+  
+  annotate(geom = "rect", 
+           ymin=-Inf , ymax=Inf, 
+           xmin=0.31, xmax=Inf,
+           fill = "red", 
+           alpha = 0.2) +
+  
+  geom_vline(aes(xintercept=as.numeric(cor_list[which(cor_list$p == min(cor_list$p)),]$threshold)),
+             linetype="dashed",
+             color="darkred", 
+             size=1) +
+  
+  geom_line(size=1) +
+  
+  geom_point(shape=21, 
+             size=2, 
+             stroke=1, 
+             fill="white", 
+             color="black") +
+  
+  theme_classic() +
+  
+  xlab("\n Binarization threshold value") +
+  
+  ylab("Pearson correlation p-value \n ") +
+  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12), 
+        axis.title.x = element_text(size=14), 
+        axis.title.y = element_text(size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(), 
+        strip.text = element_text(size = 14, face="bold")) + 
+  
+  annotate("text", 
+           x = 0.5, 
+           y = 0.95, 
+           label = "B.", 
+           size=9, 
+           fontface=2) +
+  
+  scale_y_continuous(
+    labels = scales::number_format(accuracy = 0.01,
+                                   decimal.mark = '.'))
+
+correlation_combined <- correlation_r2/correlation_p
+
+```
+
+
+```{r correlation_plot, fig.width=15, fig.height=15, dpi=600}
+plot(correlation_combined)
+```
+
+### 2.2. Applying a site-specific threshold value using binarisation algorithms
+
+Since we already loaded the chronologically concatenated CVR-index dataframes per site, we will start here at the binarisation step. For our second approach, instead of applying a constant binarization threshold, we applied a site-dependent threshold to each of the sites. To determine the threshold value for each site, we made use of the binarization algorithms available in the autothresholdr’ package (Landini et al. 2017). Every binarization algorithm provides a unique binarization threshold per site, and unlike the previous method, threshold values can be variable between sites. 
+
+#### Binarisation of CVR-index data using a range of thresholds
+
+```{r}
+# Here, we'll try different binarization algorithms which produce a
+# site-specific threshold value
+
+merged_csv_list_1_5 <- merged_csv_list_256
+
+thresholding_methods <- c("IJDefault", 
+                          "Huang", 
+                          "Huang2", 
+                          "Intermodes", 
+                          "IsoData", 
+                          "Li", 
+                          "MaxEntropy", 
+                          "Mean", 
+                          "MinErrorI", 
+                          "Minimum", 
+                          "Moments", 
+                          "Otsu", 
+                          "Percentile", 
+                          "RenyiEntropy", 
+                          "Shanbhag", 
+                          "Triangle", 
+                          "Yen")
+
+thresh_list_2 <- vector("list", length = length(thresholding_methods))
+
+for (i in 1:length(thresh_list_2)){
+  
+  thresh_list_2[[i]] <- merged_csv_list_1_5
+  
+}
+
+names(thresh_list_2) <- thresholding_methods
+
+for (i in 1:length(thresh_list_2)){
+  
+  for (j in 1:length(thresh_list_2[[i]])){
+      
+      threshold <- tryCatch(threshold_df(df = thresh_list_2[[i]][[j]]@merged_df, method = thresholding_methods[i]), error=function(err) NA)
+      
+      if(is.na(threshold)){
+        
+        thresh_list_2[[i]][[j]] <- NA
+        
+      }
+      
+      else{
+      
+      thresh_list_2[[i]][[j]] <- binarize_df(merged_soundscape = thresh_list_2[[i]][[j]], method = "custom", value = threshold)
+      
+      }
+
+    
+}
+
+```
+
+#### Let's remove the binarization algorithms for which some thresholding didn't work 
+
+```{r}
+
+to_remove <- c()
+
+for (i in 1:length(thresh_list_2)){
+  
+  if(any(is.na(thresh_list_2[[i]]))){
+    
+    to_remove[i] <- i
+    
+  }
+  
+  else{
+    
+    next
+    
+  }
+  
+}
+
+to_remove <- to_remove[!is.na(to_remove)]
+
+thresh_list_2 <- thresh_list_2[-to_remove]
+
+```
+
+#### Separating the OSUs into 24-hour samples of acoustic trait space + subsetting to 14,300 Hz
+
+```{r}
+
+sampling_duration_list_threshold_2 <- vector("list", length(thresh_list_2))
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  sampling_duration_list_threshold_2[[i]] <- vector("list", length(thresh_list_2[[i]]))
+  
+}
+
+duration_start <- seq(1, 2593, 288)
+duration_end <- seq(288, 2880, 288)
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_2[[i]])){
+    
+    sampling_duration_list_threshold_2[[i]][[j]] <- vector("list", length = length(duration_end))
+    
+    for (k in 1:length(duration_start)){
+      
+      sampling_duration_list_threshold_2[[i]][[j]][[k]] <- thresh_list_2[[i]][[j]]
+      
+    }
+    
+    names(sampling_duration_list_threshold_2[[i]][[j]]) <- seq(1, length(duration_start), 1)
+    
+  }
+  
+  names(sampling_duration_list_threshold_2[[i]]) <- names(merged_csv_list_1_5)
+  
+}
+
+names(sampling_duration_list_threshold_2) <- thresholding_methods[-to_remove]
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_2[[i]])){
+    
+    for (k in 1:length(sampling_duration_list_threshold_2[[i]][[j]])){
+      
+      if(ncol(sampling_duration_list_threshold_2[[i]][[j]][[k]]@merged_df) >= duration_end[k]){
+        
+        sampling_duration_list_threshold_2[[i]][[j]][[k]]@merged_df <- sampling_duration_list_threshold_2[[i]][[j]][[k]]@merged_df[46:128,duration_start[k]:duration_end[k]]
+        
+        sampling_duration_list_threshold_2[[i]][[j]][[k]]@binarized_df <- sampling_duration_list_threshold_2[[i]][[j]][[k]]@binarized_df[46:128,duration_start[k]:duration_end[k]]
+        
+      }
+      
+      else{
+        
+        sampling_duration_list_threshold_2[[i]][[j]][[k]] <- as.list(c(NA))
+        
+      }
+      
+    }
+    
+  }
+  
+}
+
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_2[[i]])){
+    
+    if (length(which(sapply(sampling_duration_list_threshold_2[[i]], function(x) is.list(x))))==0){
+      
+      sampling_duration_list_threshold_2[[i]][[j]] <- sampling_duration_list_threshold_2[[i]][[j]]
+    }
+    
+    else{
+      
+      sampling_duration_list_threshold_2[[i]][[j]] <- sampling_duration_list_threshold_2[[i]][[j]][-which(sapply(sampling_duration_list_threshold_2[[i]][[j]], function(x) is.list(x)))]
+      
+    }
+  }
+}
+
+names(sampling_duration_list_threshold_2) <- thresholding_methods[-to_remove]
+
+
+```
+
+#### Converting the data into an OSU-by-sample incidence matrix
+
+```{r}
+
+inc_mat_threshold_2 <- vector("list", length(sampling_duration_list_threshold_2))
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  inc_mat_threshold_2[[i]] <- vector("list", length(sampling_duration_list_threshold_2[[i]]))
+  
+}
+
+for (i in 1:length(sampling_duration_list_threshold_2)){
+  
+  for (j in 1:length(sampling_duration_list_threshold_2[[i]])){
+    
+    inc_mat_threshold_2[[i]][[j]] <- vector("list", length(sampling_duration_list_threshold_2[[i]][[j]]))
+    
+  }
+  
+}
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  for (j in 1:length(inc_mat_threshold_2[[i]])){
+    
+    for (k in 1:length(inc_mat_threshold_2[[i]][[j]])){
+      
+      inc_mat_threshold_2[[i]][[j]][[k]] <- unlist(sampling_duration_list_threshold_2[[i]][[j]][[k]]@binarized_df)
+      
+      sampling_duration_list_threshold_2[[i]][[j]][[k]] <- NA
+      
+    }
+    
+    inc_mat_threshold_2[[i]][[j]] <- as.data.frame(t(data.frame(do.call(rbind, inc_mat_threshold_2[[i]][[j]]))))
+    
+    rownames(inc_mat_threshold_2[[i]][[j]]) <-  paste0("OSU", seq(1, nrow(inc_mat_threshold_2[[i]][[j]]), 1))
+    
+    inc_mat_threshold_2[[i]][[j]] <- as.matrix(inc_mat_threshold_2[[i]][[j]])
+    
+    sampling_duration_list_threshold_2[[i]][[j]] <- NA
+    
+  }
+  
+}
+
+sampling_duration_list_threshold_2 <- NA
+
+names(inc_mat_threshold_2) <- thresholding_methods[-to_remove]
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  names(inc_mat_threshold_2[[i]]) <- wanted
+  
+}
+
+
+
+```
+
+#### Combine OSU incidence matrices per island 
+
+```{r, echo=FALSE, results='hide', warning=FALSE, message=FALSE, error=FALSE}
+
+list_name <- names(inc_mat_threshold_2[[1]])
+list_name <- gsub(pattern = "_A$", "", list_name)
+list_name <- gsub(pattern = "_A.$", "", list_name)
+list_name <- gsub(pattern = "_B$", "", list_name)
+list_name <- gsub(pattern = "_B.$", "", list_name)
+list_name <- gsub(pattern = "_C$", "", list_name)
+list_name <- gsub(pattern = "_D$", "", list_name)
+list_name <- gsub(pattern = "_E$", "", list_name)
+list_name <- gsub(pattern = "_CampTrail$", "", list_name)
+list_name <- gsub(pattern = "_NS3_1200$", "", list_name)
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  names(inc_mat_threshold_2[[i]]) <- list_name
+  
+}
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  inc_mat_threshold_2[[i]] <- split(inc_mat_threshold_2[[i]], names(inc_mat_threshold_2[[i]])) %>% map(cbind.data.frame)
+  
+}
+
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  for (j in 1:length(inc_mat_threshold_2[[i]])){
+    
+    inc_mat_threshold_2[[i]][[j]] <- as.matrix(inc_mat_threshold_2[[i]][[j]])
+    
+  }
+  
+}
+
+```
+
+
+#### Rarefaction 8 sampling days and calculate the functional soundscape diversity metrics 
+  
+```{r, echo = FALSE, results='hide', error=FALSE}
+
+rarefied_sounddiv_threshold_2 <- inc_mat_threshold_2
+
+for (i in 1:length(rarefied_sounddiv_threshold_2)){
+  
+  for (j in 1:length(rarefied_sounddiv_threshold_2[[i]])){
+    
+    rarefied_sounddiv_threshold_2[[i]][[j]] <- NA
+    
+  }
+  
+}
+
+
+for (i in 1:length(inc_mat_threshold_2)){
+  
+  for (j in 1:length(inc_mat_threshold_2[[i]])){
+    
+    rarefied_sounddiv_threshold_2[[i]][[j]] <- estimateD(x = inc_mat_threshold_2[[i]][[j]], 
+                                             datatype = "incidence_raw",
+                                             base =  "size",
+                                             level = 8
+    )
+    
+    rarefied_sounddiv_threshold_2[[i]][[j]] <- distinct(rarefied_sounddiv_threshold_2[[i]][[j]][,2:ncol(rarefied_sounddiv_threshold_2[[i]][[j]])])
+    
+    rarefied_sounddiv_threshold_2[[i]][[j]]$site <- names(rarefied_sounddiv_threshold_2[[i]])[j]
+    
+    
+  }
+  
+  inc_mat_threshold_2[[i]] <- NA
+  
+  rarefied_sounddiv_threshold_2[[i]] <- rbindlist(rarefied_sounddiv_threshold_2[[i]])
+  
+}
+
+
+rarefied_sounddiv_threshold_2_q0 <- rarefied_sounddiv_threshold_2
+
+for (i in 1:length(rarefied_sounddiv_threshold_2_q0)){
+  
+  rarefied_sounddiv_threshold_2_q0[[i]] <- subset(rarefied_sounddiv_threshold_2_q0[[i]], 
+                                        rarefied_sounddiv_threshold_2_q0[[i]]$order==0)
+  
+}
+
+names(rarefied_sounddiv_threshold_2_q0) <- thresholding_methods[-to_remove]
+
+for (i in 1:length(rarefied_sounddiv_threshold_2_q0)){
+  
+  rarefied_sounddiv_threshold_2_q0[[i]]$algorithm <- thresholding_methods[-to_remove][i]
+  
+}
+
+rarefied_sounddiv_threshold_2_q0_total <- rbindlist(rarefied_sounddiv_threshold_2_q0)
+
+```
+
+#### Assessing which thresholding algorithm yields the highest correlation with the taxonomic diversity of sonif species
+
+```{r}
+
+  # Merge together with metadata
+
+rarefied_sounddiv_threshold_2_q0_total$site <- toupper(rarefied_sounddiv_threshold_2_q0_total$site)
+
+rarefied_sounddiv_threshold_2_q0_total <- merge(x=rarefied_sounddiv_threshold_2_q0_total, 
+                              y = total_richness, 
+                              by="site")
+
+# Transform richness to proportion for equal scale 
+
+rarefied_sounddiv_threshold_2_q0_total$qD <- (rarefied_sounddiv_threshold_2_q0_total$qD / 23904)*100
+
+# Get the ranking of highest to lowest correlation with total_tax
+
+cor_list_2 <- vector("list", length(unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)))
+
+for (i in 1:length(cor_list_2)){
+  
+  cor_list_2[[i]] <- as.data.frame(
+    t(as.data.frame(
+      c(
+        
+        cor.test(x = subset(rarefied_sounddiv_threshold_2_q0_total,
+                        rarefied_sounddiv_threshold_2_q0_total$algorithm==unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)[i])$qD,
+             y = subset(rarefied_sounddiv_threshold_2_q0_total,
+                      rarefied_sounddiv_threshold_2_q0_total$algorithm==unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)[i])$total_tax)$p.value,
+        
+        cor.test(x = subset(rarefied_sounddiv_threshold_2_q0_total,
+                        rarefied_sounddiv_threshold_2_q0_total$algorithm==unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)[i])$qD,
+             y = subset(rarefied_sounddiv_threshold_2_q0_total,
+                      rarefied_sounddiv_threshold_2_q0_total$algorithm==unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)[i])$total_tax)$estimate
+        
+  ))))
+  
+  cor_list_2[[i]]$algorithm <- unique(rarefied_sounddiv_threshold_2_q0_total$algorithm)[i]
+  
+  colnames(cor_list_2[[i]]) <- c("p", "R2", "algorithm")
+  
+}
+
+cor_list_2 <- rbindlist(cor_list_2)
+
+cor_list_2 <- cor_list_2[order(cor_list_2$R2, decreasing = TRUE),]
+
+# re-order the algorithms by correlation 
+
+rarefied_sounddiv_threshold_2_q0_total$algorithm <- factor(rarefied_sounddiv_threshold_2_q0_total$algorithm, levels = cor_list_2$algorithm)
+
+
+# Some prep
+
+max_values <- 
+  rarefied_sounddiv_threshold_2_q0_total %>% 
+  dplyr::group_by(algorithm) %>%
+  filter(qD == max(qD))
+
+max_values <- max_values[order(max_values$algorithm),]
+
+min_values <- 
+  rarefied_sounddiv_threshold_2_q0_total %>% 
+  dplyr::group_by(algorithm) %>%
+  filter(qD == min(qD))
+
+min_values <- min_values[order(min_values$algorithm),]
+
+y_pos <- max_values$qD + ((max_values$qD - min_values$qD)/5)
+x_pos <- rep(10, 13)
+
+
+# Plotting
+
+algo_combined<- 
+  
+  ggplot(rarefied_sounddiv_threshold_2_q0_total, aes(total_tax, 
+                                        qD, 
+                                        group=algorithm)) +
+  
+  stat_cor(aes(label = paste(..r.label.., ..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = x_pos,
+           label.y = y_pos,
+           size=3.5, 
+           method="pearson")+
+  
+  facet_wrap(~algorithm, scales = "free")+
+  geom_smooth(method="lm", color="darkred", size=1, linetype="dashed")+
+  theme_classic()+
+  geom_point(shape=21, color="black", fill="white", size=1, stroke=1) + 
+  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12), 
+        axis.title.x = element_text(size=14), 
+        axis.title.y = element_text(size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(), 
+        strip.text = element_text(size = 14, face="bold")) + 
+  
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape richness (%) \n")+
+  scale_y_continuous(labels = comma)
+
+
+```
+
+
+#### Plotting
+
+```{r, fig.width= 20, fig.height=15, dpi=600}
+
+plot(algo_combined)
+
+```
+
+#### Making Before/After Binarization Plots
+
+To see which binarization algorithm works best, we recommend visually inspecting the pre- and post-binarization soundscapes, and ruling out those algorithms that clearly are not captures the acoustic structure. To do so, we will make use of the 'heatmapper' function and the 'check_thresh' function, both available in the 'soundscapeR' R-package. Here, we will visualize the pre- and post-binarization for one of the sites in the study period. 
+
+```{r, results='hide', warning=FALSE, message=FALSE, echo=FALSE, error=FALSE}
+
+names <- thresholding_methods[-to_remove]
+
+plot_list <- vector("list", length(names))
+
+for (i in 1:length(names)){
+  
+  plot_list[[i]] <- check_thresh(merged_soundscape = merged_csv_list_1_5[[33]], method = names[i]) + 
+    theme(plot.tag = element_text(size = 24, face = "bold")) +
+    labs(tag = paste0(names[i]))
+  
+}
+
+
+```
+
+
+#### Plotting
+
+```{r, fig.height= 15, fig.width= 15, dpi=600}
+
+plot_list[[1]]
+plot_list[[2]]
+plot_list[[3]]
+plot_list[[4]]
+plot_list[[5]]
+plot_list[[6]]
+plot_list[[7]]
+plot_list[[8]]
+plot_list[[9]]
+plot_list[[10]]
+plot_list[[11]]
+plot_list[[12]]
+plot_list[[13]]
+
+```

@@ -1,0 +1,1586 @@
+---
+title: "Luypaert et al. (2021) - Supplementary Material 1"
+author: '"Thomas Luypaert - Norwegian University of Life Sciences"'
+date: "9/23/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This RMarkdown file contains the code which accompanies the supplementary material 1 provided in Luypaert et al. (2021). 
+
+## 0. Loading the required packages & downloading the raw data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# Loading packages
+
+library(readr)
+library(data.table)
+library(knitr)
+library(hilldiv)
+library(ggplot2)
+library(viridis)
+library(dataone)
+library(iNEXT)
+library(devtools)
+library(dataone)
+library(dplyr)
+library(soundscapeR)
+library(ggpubr)
+library(ggforce)
+library(scales)
+library(patchwork)
+library(codyn)
+library(ggpmisc)
+library(purrr)
+library(magrittr)
+
+```
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Downloading data from the KNB repository
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+queryParamList <- list(q="id:doi*10.5063/F1MS3R6W", fl="id,title")
+result <- query(mn, solrQuery=queryParamList, as="data.frame")
+packagePid <- result[1,1]
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+bagitFileName <- getPackage(mn, id=packagePid)
+bagitFileName <- gsub("\\\\", "/", as.character(bagitFileName))
+
+to_unzip <- unzip(zipfile = bagitFileName, list = TRUE)
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[c(3, 5, 7, 8),1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+list.dirs.depth.n <- function(p, n) {
+  res <- list.dirs(p, recursive = FALSE)
+  if (n > 1) {
+    add <- list.dirs.depth.n(res, n-1)
+    c(res, add)
+  } else {
+    res
+  }
+}
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[4,1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = locations[1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted", "/data/",gsub("\\.zip", "", basename(locations[1]))))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+```
+
+## 0. Compiling the taxonomic richness data
+
+### 0.1. Anuran data
+
+The anuran data was derived from the aural and visual identification of anuran vocalisations by a trained expert (Gabriel Masseli) using the RFCx ARBIMON Visualizer Tool (ENTER LINK). All species identities were cross-verified by second observer (Igor Kaefer) to ensure accuracy. The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- read_csv(locations[4], show_col_types = FALSE)
+
+```
+
+#### Remove rows containing 'None' for the species
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[!frog_man$species=="None",]
+frog_man <- frog_man[!frog_man$species=="Malfunctioning",]
+
+```
+
+#### Remove all the riparian sites from the data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[-grep("_Rip", frog_man$plot), ]
+
+```
+
+#### Subset to contain only the plots used in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man$plot <- gsub("-", "_", frog_man$plot)
+frog_man$plot <- gsub("Waba", "WABA", frog_man$plot)
+
+wanted <- c("Abusado",
+            "Adeus_A", 
+            "Adeus_B",
+            "Aline",
+            "Andre",
+            "Arrepiado", 
+            "Bacaba_B",
+            "Beco_do_Catitu_A",
+            "Beco_do_Catitu_B",
+            "Beco_do_Catitu_D",
+            "Beco_do_Catitu_E",
+            "Cafundo",
+            "CF_Grid_CampTrail_A",
+            "CF_Grid_NS3_1200", 
+            "CF_Loreno_A", 
+            "CF_Loreno_B", 
+            "CF_WABA_B", 
+            "CF_WABA_C", 
+            "Cipoal_A", 
+            "Cipoal_B", 
+            "Cipoal_C", 
+            "Coata", 
+            "Formiga", 
+            "Furo_de_Santa_Luzia_B", 
+            "Furo_de_Santa_Luzia_C", 
+            "Fuzaca_B", 
+            "Fuzaca_C", 
+            "Fuzaca_D", 
+            "Garrafa", 
+            "Gaviao_real_A", 
+            "Gaviao_real_B", 
+            "Gaviao_real_C", 
+            "Gaviao_real_D", 
+            "Jabuti_A", 
+            "Jabuti_B", 
+            "Jabuti_C", 
+            "Jiquitaia", 
+            "Joaninha", 
+            "Martelo_B", 
+            "Martelo_C", 
+            "Mascote_A1", 
+            "Mascote_A2", 
+            "Mascote_B1", 
+            "Mascote_B2", 
+            "Moita_A", 
+            "Moita_B", 
+            "Palhal", 
+            "Panema", 
+            "Pe_Torto", 
+            "Piquia", 
+            "Pontal_B", 
+            "Pontal_C", 
+            "Porto_Seguro_B", 
+            "Porto_Seguro_C", 
+            "Porto_Seguro_D", 
+            "Relogio_B", 
+            "Sapupara_A", 
+            "Sapupara_B", 
+            "Torem", 
+            "Tristeza_A", 
+            "Tristeza_B", 
+            "Tristeza_C", 
+            "Tucumari_A", 
+            "Tucumari_B", 
+            "Tucumari_C")          
+
+frog_man <- frog_man[with(frog_man, plot %in% wanted ),]
+
+```
+
+#### Count the number of unique frog species per site 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_df_richness <- aggregate(data = frog_man,
+                      species ~ site,
+                      function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+colnames(frog_df_richness) <- c("site", "anuran_richness")
+
+knitr::kable(frog_df_richness, caption = "Anuran taxonomic species richness per island", align = "l") 
+
+```
+
+
+### 0.2. Avian data 
+
+The avian data was derived from the pattern matching algorithm available on the RFCx ARBIMON Platform: <https://arbimon.rfcx.org/project/balbina>, combined with visual and aural verification by a trained expert (Marconi Campos-Cerqueira). The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_files <- list.files(path = locations[3], full.names = TRUE)
+
+bird_list <- vector("list", length = length(bird_files))
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- read_csv(bird_files[i], show_col_types = FALSE)
+  
+}
+
+names(bird_list) <- gsub(".csv", "", basename(bird_files))
+
+```
+
+#### Modify the site names to match the sites in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$site <- gsub('\\.', '_', bird_list[[i]]$site)
+  bird_list[[i]]$site <- gsub('-', '_', bird_list[[i]]$site)
+  
+}
+
+
+```
+
+#### Filter the data by sites in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][with(bird_list[[i]], site %in% wanted ),]
+  
+}
+
+
+```
+
+#### Filter to retain only the verified records 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][bird_list[[i]]$validated=="present",]
+  
+}
+
+```
+
+#### Add a species column to the data and rbind 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$species <- names(bird_list)[i]
+  
+}
+
+bird_df <- rbindlist(bird_list)
+
+```
+
+#### Make the species names uniform across call types
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df$species <- gsub("1|2|_call|_duet|_nocturnal", "", bird_df$species)
+
+bird_df$species[bird_df$species=="Glyphorynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+bird_df$species[bird_df$species=="Glyphorhynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+```
+
+#### Make the plot names uniform per island
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+island_name <- bird_df$site
+island_name <- gsub(pattern = "_A$", "", island_name)
+island_name <- gsub(pattern = "_A.$", "", island_name)
+island_name <- gsub(pattern = "_B$", "", island_name)
+island_name <- gsub(pattern = "_B.$", "", island_name)
+island_name <- gsub(pattern = "_C$", "", island_name)
+island_name <- gsub(pattern = "_D$", "", island_name)
+island_name <- gsub(pattern = "_E$", "", island_name)
+island_name <- gsub(pattern = "_CampTrail$", "", island_name)
+island_name <- gsub(pattern = "_NS3_1200$", "", island_name)
+
+bird_df$site <- island_name
+
+```
+
+#### Count the number of unique species per island 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df_richness <- aggregate(data = bird_df,
+                     species ~ site,
+                     function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+colnames(bird_df_richness) <- c("site", "avian_richness")
+
+knitr::kable(bird_df_richness, caption = "Avian taxonomic species richness per island", align = "l") 
+
+```
+
+
+### 0.3. Monkey data
+
+The monkey taxonomic richness data was compiled from a previous study in the area which collected taxonomic data for terresrial vertebrates (Benchimol & Peres 2015). For more information, consult the main manuscript of Luypaert et al. (2021) or head on over to the original paper: <https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0129818#sec014>
+
+#### Load the data into R
+
+```{r}
+
+monkey_df_richness <- read_csv(locations[6], show_col_types = FALSE)
+
+colnames(monkey_df_richness) <- c("site", "primate_richness")
+
+monkey_df_richness$site <- gsub("-", "_", monkey_df_richness$site)
+
+knitr::kable(monkey_df_richness, caption = "Primate taxonomic richness per island")
+
+```
+
+
+### 0.4. Compiling the taxonomic richness data into a single metric
+
+```{r}
+
+total_richness <- merge(
+  merge(frog_df_richness, bird_df_richness, by="site"), 
+  monkey_df_richness, by="site")
+
+total_richness$total_tax <- total_richness$anuran_richness + total_richness$avian_richness + total_richness$primate_richness
+
+knitr::kable(total_richness, caption = "Total taxnomic richness of soniferous species per island")
+
+```
+
+## 1. Assessing the effect of sampling duration and regime on the functional soundscape diversity metrics and their relationship with the taxonomic richness of soniferous species
+
+### 1.1. Assessing the effect of sampling regime 
+
+#### Loading the chronologically concatenated CVR-files from before
+
+Since we already computed the CVR-indices and concatenated then chronologically in the RMarkdown of the case study, to save time, here we will simply load these data into R. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+load(locations[5])
+
+```
+
+This data represents the maximal intensity sampling regime for our study (1 / 5 min of recording). To assess the effect of sampling regime, we will produce sampling regimes of lower intensity by subsetting this chronologically merged CVR data frame. 
+
+#### Creating sampling regimes of lower intensity
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# 1 / 5 min recording
+
+merged_csv_list_1_5 <- merged_csv_list_256
+
+# 1 / 10 min recording
+
+merged_csv_list_1_10 <- merged_csv_list_256
+
+for (i in 1:length(merged_csv_list_1_10)){
+
+  merged_csv_list_1_10[[i]]@merged_df <- merged_csv_list_256[[i]]@merged_df[which(substr(colnames(merged_csv_list_256[[i]]@merged_df), 4,5) %in% c("00", "10", "20", "30", "40", "50", "60"))]
+
+
+}
+
+# 1 / 15 min recording
+
+merged_csv_list_1_15 <- merged_csv_list_256
+
+for (i in 1:length(merged_csv_list_256)){
+
+  merged_csv_list_1_15[[i]]@merged_df <- merged_csv_list_256[[i]]@merged_df[which(substr(colnames(merged_csv_list_256[[i]]@merged_df), 4, 5) %in% c("00", "15", "30", "45"))]
+
+}
+
+# 1 / 20 min recording 
+
+merged_csv_list_1_20 <- merged_csv_list_256
+
+for (i in 1:length(merged_csv_list_256)){
+
+  merged_csv_list_1_20[[i]]@merged_df <- merged_csv_list_256[[i]]@merged_df[which(substr(colnames(merged_csv_list_256[[i]]@merged_df), 4, 5) %in% c("00", "20", "40"))]
+
+}
+
+# 1 / 30 min recording
+
+merged_csv_list_1_30 <- merged_csv_list_256
+
+for (i in 1:length(merged_csv_list_256)){
+
+  merged_csv_list_1_30[[i]]@merged_df <- merged_csv_list_256[[i]]@merged_df[which(substr(colnames(merged_csv_list_256[[i]]@merged_df), 4, 5) %in% c("00", "30"))]
+
+}
+
+# 1 / 60 min recording
+
+merged_csv_list_1_60 <- merged_csv_list_256
+
+for (i in 1:length(merged_csv_list_256)){
+
+  merged_csv_list_1_60[[i]]@merged_df <- merged_csv_list_256[[i]]@merged_df[which(substr(colnames(merged_csv_list_256[[i]]@merged_df), 4, 5) %in% c("00"))]
+
+}
+
+```
+
+#### Binarisation of CVR-index data
+
+Once the CVR-index files have been concatenated chronologically, we will apply a binarisation algorithm to the data to turn raw index values into detection/non-detection data. This is done to assess the presence/absence of our Operational Sound Units throughout the recording period. 
+
+Here we will use the 'IsoData' binarisation algorithm available in the 'autothresholdr' R-package. To do the binarisation, we can use the 'threshold_df' and 'binarize_df' functions available in the 'soundscapeR' package. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+thresh_list_1_5 <- vector("list", length(merged_csv_list_1_5))
+thresh_list_1_10 <- vector("list", length(merged_csv_list_1_10))
+thresh_list_1_15 <- vector("list", length(merged_csv_list_1_15))
+thresh_list_1_20 <- vector("list", length(merged_csv_list_1_20))
+thresh_list_1_30 <- vector("list", length(merged_csv_list_1_30))
+thresh_list_1_60 <- vector("list", length(merged_csv_list_1_60))
+
+for(i in 1:length(thresh_list_1_5)){
+
+  threshold_1_5<- threshold_df(df = merged_csv_list_1_5[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_5[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_5[[i]], method = "custom", value = threshold_1_5)
+
+  threshold_1_10<- threshold_df(df = merged_csv_list_1_10[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_10[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_10[[i]], method = "custom", value = threshold_1_10)
+
+  threshold_1_15<- threshold_df(df = merged_csv_list_1_15[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_15[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_15[[i]], method = "custom", value = threshold_1_15)
+
+  threshold_1_20<- threshold_df(df = merged_csv_list_1_20[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_20[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_20[[i]], method = "custom", value = threshold_1_20)
+
+  threshold_1_30<- threshold_df(df = merged_csv_list_1_30[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_30[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_30[[i]], method = "custom", value = threshold_1_30)
+
+  threshold_1_60<- threshold_df(df = merged_csv_list_1_60[[i]]@merged_df, method = "IsoData")
+
+  thresh_list_1_60[[i]] <- binarize_df(merged_soundscape = merged_csv_list_1_60[[i]], method = "custom", value = threshold_1_60)
+
+
+}
+
+```
+
+#### Separating the OSUs into 24-hour samples of acoustic trait space
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# 1/5 min recording
+
+sampling_duration_list_1_5 <- vector("list", length(thresh_list_1_5))
+
+duration_start <- seq(1, 2593, 288)
+duration_end <- seq(288, 2880, 288)
+
+
+for (i in 1:length(thresh_list_1_5)){
+
+  sampling_duration_list_1_5[[i]] <- vector("list", length = length(duration_end))
+
+  for (j in 1:length(duration_start)){
+
+    sampling_duration_list_1_5[[i]][[j]] <- thresh_list_1_5[[i]]
+
+  }
+
+  names(sampling_duration_list_1_5[[i]]) <- seq(1, length(duration_start), 1)
+
+}
+
+names(sampling_duration_list_1_5) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_5)){
+
+  for (j in 1:length(sampling_duration_list_1_5[[i]])){
+
+    if(ncol(sampling_duration_list_1_5[[i]][[j]]@binarized_df) >= duration_end[j]){
+
+      sampling_duration_list_1_5[[i]][[j]]@merged_df <- sampling_duration_list_1_5[[i]][[j]]@merged_df[,duration_start[j]:duration_end[j]]
+
+      sampling_duration_list_1_5[[i]][[j]]@binarized_df <- sampling_duration_list_1_5[[i]][[j]]@binarized_df[,duration_start[j]:duration_end[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_5[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_5)){
+
+  if (length(which(sapply(sampling_duration_list_1_5[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_5[[i]] <- sampling_duration_list_1_5[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_5[[i]] <- sampling_duration_list_1_5[[i]][-which(sapply(sampling_duration_list_1_5[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+# 1 / 10 min recording
+
+sampling_duration_list_1_10 <- vector("list", length(thresh_list_1_10))
+
+duration_start_1_10 <- seq(1, 1297, 144)
+duration_end_1_10 <- seq(144, 1440, 144)
+
+for (i in 1:length(thresh_list_1_10)){
+
+  sampling_duration_list_1_10[[i]] <- vector("list", length = length(duration_end_1_10))
+
+  for (j in 1:length(duration_start_1_10)){
+
+    sampling_duration_list_1_10[[i]][[j]] <- thresh_list_1_10[[i]]
+
+  }
+
+  names(sampling_duration_list_1_10[[i]]) <- seq(1, length(duration_start_1_10), 1)
+
+}
+
+names(sampling_duration_list_1_10) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_10)){
+
+  for (j in 1:length(sampling_duration_list_1_10[[i]])){
+
+    if(ncol(sampling_duration_list_1_10[[i]][[j]]@binarized_df) >= duration_end_1_10[j]){
+
+      sampling_duration_list_1_10[[i]][[j]]@merged_df <- sampling_duration_list_1_10[[i]][[j]]@merged_df[,duration_start_1_10[j]:duration_end_1_10[j]]
+
+      sampling_duration_list_1_10[[i]][[j]]@binarized_df <- sampling_duration_list_1_10[[i]][[j]]@binarized_df[,duration_start_1_10[j]:duration_end_1_10[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_10[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_10)){
+
+  if (length(which(sapply(sampling_duration_list_1_10[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_10[[i]] <- sampling_duration_list_1_10[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_10[[i]] <- sampling_duration_list_1_10[[i]][-which(sapply(sampling_duration_list_1_10[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+# 1 / 15 min recording
+
+sampling_duration_list_1_15 <- vector("list", length(thresh_list_1_15))
+
+duration_start_1_15 <- seq(1, 865, 96)
+duration_end_1_15 <- seq(96, 960, 96)
+
+for (i in 1:length(thresh_list_1_15)){
+
+  sampling_duration_list_1_15[[i]] <- vector("list", length = length(duration_end_1_15))
+
+  for (j in 1:length(duration_start_1_15)){
+
+    sampling_duration_list_1_15[[i]][[j]] <- thresh_list_1_15[[i]]
+
+  }
+
+  names(sampling_duration_list_1_15[[i]]) <- seq(1, length(duration_start_1_15), 1)
+
+}
+
+names(sampling_duration_list_1_15) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_15)){
+
+  for (j in 1:length(sampling_duration_list_1_15[[i]])){
+
+    if(ncol(sampling_duration_list_1_15[[i]][[j]]@binarized_df) >= duration_end_1_15[j]){
+
+      sampling_duration_list_1_15[[i]][[j]]@merged_df <- sampling_duration_list_1_15[[i]][[j]]@merged_df[,duration_start_1_15[j]:duration_end_1_15[j]]
+
+      sampling_duration_list_1_15[[i]][[j]]@binarized_df <- sampling_duration_list_1_15[[i]][[j]]@binarized_df[,duration_start_1_15[j]:duration_end_1_15[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_15[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_15)){
+
+  if (length(which(sapply(sampling_duration_list_1_15[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_15[[i]] <- sampling_duration_list_1_15[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_15[[i]] <- sampling_duration_list_1_15[[i]][-which(sapply(sampling_duration_list_1_15[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+# 1 / 20 min recording
+
+sampling_duration_list_1_20 <- vector("list", length(thresh_list_1_20))
+
+duration_start_1_20 <- seq(1, 649, 72)
+duration_end_1_20 <- seq(72, 720, 72)
+
+for (i in 1:length(thresh_list_1_20)){
+
+  sampling_duration_list_1_20[[i]] <- vector("list", length = length(duration_end_1_20))
+
+  for (j in 1:length(duration_start_1_20)){
+
+    sampling_duration_list_1_20[[i]][[j]] <- thresh_list_1_20[[i]]
+
+  }
+
+  names(sampling_duration_list_1_20[[i]]) <- seq(1, length(duration_start_1_20), 1)
+
+}
+
+names(sampling_duration_list_1_20) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_20)){
+
+  for (j in 1:length(sampling_duration_list_1_20[[i]])){
+
+    if(ncol(sampling_duration_list_1_20[[i]][[j]]@binarized_df) >= duration_end_1_20[j]){
+
+      sampling_duration_list_1_20[[i]][[j]]@merged_df <- sampling_duration_list_1_20[[i]][[j]]@merged_df[,duration_start_1_20[j]:duration_end_1_20[j]]
+
+      sampling_duration_list_1_20[[i]][[j]]@binarized_df <- sampling_duration_list_1_20[[i]][[j]]@binarized_df[,duration_start_1_20[j]:duration_end_1_20[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_20[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_20)){
+
+  if (length(which(sapply(sampling_duration_list_1_20[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_20[[i]] <- sampling_duration_list_1_20[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_20[[i]] <- sampling_duration_list_1_20[[i]][-which(sapply(sampling_duration_list_1_20[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+# 1 / 30 min recording 
+
+sampling_duration_list_1_30 <- vector("list", length(thresh_list_1_30))
+
+duration_start_1_30 <- seq(1, 433, 48)
+duration_end_1_30 <- seq(48, 480, 48)
+
+for (i in 1:length(thresh_list_1_30)){
+
+  sampling_duration_list_1_30[[i]] <- vector("list", length = length(duration_end_1_30))
+
+  for (j in 1:length(duration_start_1_30)){
+
+    sampling_duration_list_1_30[[i]][[j]] <- thresh_list_1_30[[i]]
+
+  }
+
+  names(sampling_duration_list_1_30[[i]]) <- seq(1, length(duration_start_1_30), 1)
+
+}
+
+names(sampling_duration_list_1_30) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_30)){
+
+  for (j in 1:length(sampling_duration_list_1_30[[i]])){
+
+    if(ncol(sampling_duration_list_1_30[[i]][[j]]@binarized_df) >= duration_end_1_30[j]){
+
+      sampling_duration_list_1_30[[i]][[j]]@merged_df <- sampling_duration_list_1_30[[i]][[j]]@merged_df[,duration_start_1_30[j]:duration_end_1_30[j]]
+
+      sampling_duration_list_1_30[[i]][[j]]@binarized_df <- sampling_duration_list_1_30[[i]][[j]]@binarized_df[,duration_start_1_30[j]:duration_end_1_30[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_30[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_30)){
+
+  if (length(which(sapply(sampling_duration_list_1_30[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_30[[i]] <- sampling_duration_list_1_30[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_30[[i]] <- sampling_duration_list_1_30[[i]][-which(sapply(sampling_duration_list_1_30[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+# 1 / 60 min recording
+
+sampling_duration_list_1_60 <- vector("list", length(thresh_list_1_60))
+
+duration_start_1_60 <- seq(1, 217, 24)
+duration_end_1_60 <- seq(24, 240, 24)
+
+
+for (i in 1:length(thresh_list_1_60)){
+
+  sampling_duration_list_1_60[[i]] <- vector("list", length = length(duration_end_1_60))
+
+  for (j in 1:length(duration_start_1_60)){
+
+    sampling_duration_list_1_60[[i]][[j]] <- thresh_list_1_60[[i]]
+
+  }
+
+  names(sampling_duration_list_1_60[[i]]) <- seq(1, length(duration_start_1_60), 1)
+
+}
+
+names(sampling_duration_list_1_60) <- wanted
+
+for (i in 1:length(sampling_duration_list_1_60)){
+
+  for (j in 1:length(sampling_duration_list_1_60[[i]])){
+
+    if(ncol(sampling_duration_list_1_60[[i]][[j]]@binarized_df) >= duration_end_1_60[j]){
+
+      sampling_duration_list_1_60[[i]][[j]]@merged_df <- sampling_duration_list_1_60[[i]][[j]]@merged_df[,duration_start_1_60[j]:duration_end_1_60[j]]
+
+      sampling_duration_list_1_60[[i]][[j]]@binarized_df <- sampling_duration_list_1_60[[i]][[j]]@binarized_df[,duration_start_1_60[j]:duration_end_1_60[j]]
+
+    }
+
+    else{
+
+      sampling_duration_list_1_60[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sampling_duration_list_1_60)){
+
+  if (length(which(sapply(sampling_duration_list_1_60[[i]], function(x) is.list(x))))==0){
+
+    sampling_duration_list_1_60[[i]] <- sampling_duration_list_1_60[[i]]
+  }
+
+  else{
+
+    sampling_duration_list_1_60[[i]] <- sampling_duration_list_1_60[[i]][-which(sapply(sampling_duration_list_1_60[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+```
+
+#### Removing the frequencies above 14,400 Hz from the data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(sampling_duration_list_1_5)){
+
+  for(j in 1:length(sampling_duration_list_1_5[[i]])){
+
+    sampling_duration_list_1_5[[i]][[j]]@merged_df <- sampling_duration_list_1_5[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_5[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_5[[i]][[j]]@binarized_df <- sampling_duration_list_1_5[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_5[[i]][[j]]@binarized_df),]
+
+    sampling_duration_list_1_10[[i]][[j]]@merged_df <- sampling_duration_list_1_10[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_10[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_10[[i]][[j]]@binarized_df <- sampling_duration_list_1_10[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_10[[i]][[j]]@binarized_df),]
+
+    sampling_duration_list_1_15[[i]][[j]]@merged_df <- sampling_duration_list_1_15[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_15[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_15[[i]][[j]]@binarized_df <- sampling_duration_list_1_15[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_15[[i]][[j]]@binarized_df),]
+
+    sampling_duration_list_1_20[[i]][[j]]@merged_df <- sampling_duration_list_1_20[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_20[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_20[[i]][[j]]@binarized_df <- sampling_duration_list_1_20[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_20[[i]][[j]]@binarized_df),]
+
+    sampling_duration_list_1_30[[i]][[j]]@merged_df <- sampling_duration_list_1_30[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_30[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_30[[i]][[j]]@binarized_df <- sampling_duration_list_1_30[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_30[[i]][[j]]@binarized_df),]
+
+    sampling_duration_list_1_60[[i]][[j]]@merged_df <- sampling_duration_list_1_60[[i]][[j]]@merged_df[46:nrow(sampling_duration_list_1_60[[i]][[j]]@merged_df),]
+
+    sampling_duration_list_1_60[[i]][[j]]@binarized_df <- sampling_duration_list_1_60[[i]][[j]]@binarized_df[46:nrow(sampling_duration_list_1_60[[i]][[j]]@binarized_df),]
+
+  }
+
+}
+
+```
+
+#### Converting the data into an OSU-by-sample incidence matrix
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+accum_1_5 <- sampling_duration_list_1_5
+accum_1_10 <- sampling_duration_list_1_10
+accum_1_15 <- sampling_duration_list_1_15
+accum_1_20 <- sampling_duration_list_1_20
+accum_1_30 <- sampling_duration_list_1_30
+accum_1_60 <- sampling_duration_list_1_60
+
+for (i in 1:length(accum_1_5)){
+
+  for (j in 1:length(accum_1_5[[i]])){
+
+    accum_1_5[[i]][[j]] <- unlist(sampling_duration_list_1_5[[i]][[j]]@binarized_df)
+
+  }
+
+  for (k in 1:length(accum_1_10[[i]])){
+
+    accum_1_10[[i]][[k]] <- unlist(sampling_duration_list_1_10[[i]][[k]]@binarized_df)
+
+  }
+
+  for (l in 1:length(accum_1_15[[i]])){
+
+    accum_1_15[[i]][[l]] <- unlist(sampling_duration_list_1_15[[i]][[l]]@binarized_df)
+
+  }
+
+  for (m in 1:length(accum_1_20[[i]])){
+
+    accum_1_20[[i]][[m]] <- unlist(sampling_duration_list_1_20[[i]][[m]]@binarized_df)
+
+  }
+
+  for (n in 1:length(accum_1_30[[i]])){
+
+    accum_1_30[[i]][[n]] <- unlist(sampling_duration_list_1_30[[i]][[n]]@binarized_df)
+
+  }
+
+  for (o in 1:length(accum_1_60[[i]])){
+
+    accum_1_60[[i]][[o]] <- unlist(sampling_duration_list_1_60[[i]][[o]]@binarized_df)
+
+  }
+
+  accum_1_5[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_5[[i]]))))
+  rownames(accum_1_5[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_5[[i]]), 1))
+
+
+  accum_1_10[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_10[[i]]))))
+  rownames(accum_1_10[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_10[[i]]), 1))
+
+
+  accum_1_15[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_15[[i]]))))
+  rownames(accum_1_15[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_15[[i]]), 1))
+
+
+  accum_1_20[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_20[[i]]))))
+  rownames(accum_1_20[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_20[[i]]), 1))
+
+
+  accum_1_30[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_30[[i]]))))
+  rownames(accum_1_30[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_30[[i]]), 1))
+
+
+  accum_1_60[[i]] <- as.data.frame(t(data.frame(do.call(rbind, accum_1_60[[i]]))))
+  rownames(accum_1_60[[i]]) <-  paste0("OSU", seq(1, nrow(accum_1_60[[i]]), 1))
+
+
+}
+
+```
+
+#### Combine OSU incidence matrices per island 
+
+```{r, warning=FALSE, message=FALSE, error=FALSE}
+
+list_name <- names(accum_1_5)
+list_name <- gsub(pattern = "_A$", "", list_name)
+list_name <- gsub(pattern = "_A.$", "", list_name)
+list_name <- gsub(pattern = "_B$", "", list_name)
+list_name <- gsub(pattern = "_B.$", "", list_name)
+list_name <- gsub(pattern = "_C$", "", list_name)
+list_name <- gsub(pattern = "_D$", "", list_name)
+list_name <- gsub(pattern = "_E$", "", list_name)
+list_name <- gsub(pattern = "_CampTrail$", "", list_name)
+list_name <- gsub(pattern = "_NS3_1200$", "", list_name)
+
+names(accum_1_5) <- list_name
+names(accum_1_10) <- list_name
+names(accum_1_15) <- list_name
+names(accum_1_20) <- list_name
+names(accum_1_30) <- list_name
+names(accum_1_60) <- list_name
+
+accum_1_5 <- split(accum_1_5, names(accum_1_5)) %>% map(dplyr::bind_cols)
+accum_1_10 <- split(accum_1_10, names(accum_1_10)) %>% map(dplyr::bind_cols)
+accum_1_15 <- split(accum_1_15, names(accum_1_15)) %>% map(dplyr::bind_cols)
+accum_1_20 <- split(accum_1_20, names(accum_1_20)) %>% map(dplyr::bind_cols)
+accum_1_30 <- split(accum_1_30, names(accum_1_30)) %>% map(dplyr::bind_cols)
+accum_1_60 <- split(accum_1_60, names(accum_1_60)) %>% map(dplyr::bind_cols)
+
+for (i in 1:length(accum_1_5)){
+  
+  accum_1_5[[i]] <- as.matrix(accum_1_5[[i]])
+  accum_1_10[[i]] <- as.matrix(accum_1_10[[i]])
+  accum_1_15[[i]] <- as.matrix(accum_1_15[[i]])
+  accum_1_20[[i]] <- as.matrix(accum_1_20[[i]])
+  accum_1_30[[i]] <- as.matrix(accum_1_30[[i]])
+  accum_1_60[[i]] <- as.matrix(accum_1_60[[i]])
+  
+}
+
+```
+
+
+#### Equilize sampling effort by rarefying to 8 days
+
+Since not all the sites in the study have an equal sampling duration (range of 4-9 days), we will apply a rarefaction procedure to the data. As data can only be reliably extrapolated to twice the minimal sampling duration, we will interpolate / extrapolate the data to 8 sampling days for all sites in the study period. To do this, we will make use of the R-package 'iNEXT'. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+rarefied_sounddiv_1_5 <- accum_1_5
+rarefied_sounddiv_1_10 <- accum_1_10
+rarefied_sounddiv_1_15 <- accum_1_15
+rarefied_sounddiv_1_20 <- accum_1_20
+rarefied_sounddiv_1_30 <- accum_1_30
+rarefied_sounddiv_1_60 <- accum_1_60
+
+for (i in 1:length(rarefied_sounddiv_1_5)){
+
+  rarefied_sounddiv_1_5[[i]] <- NA
+  rarefied_sounddiv_1_10[[i]] <- NA
+  rarefied_sounddiv_1_15[[i]] <- NA
+  rarefied_sounddiv_1_20[[i]] <- NA
+  rarefied_sounddiv_1_30[[i]] <- NA
+  rarefied_sounddiv_1_60[[i]] <- NA
+
+}
+
+for (i in 1:length(accum_1_5)){
+
+  rarefied_sounddiv_1_5[[i]] <- estimateD(x = accum_1_5[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_10[[i]] <- estimateD(x = accum_1_10[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_15[[i]] <- estimateD(x = accum_1_15[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_20[[i]] <- estimateD(x = accum_1_20[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_30[[i]] <- estimateD(x = accum_1_30[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_60[[i]] <- estimateD(x = accum_1_60[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  rarefied_sounddiv_1_5[[i]] <- distinct(rarefied_sounddiv_1_5[[i]][,2:ncol(rarefied_sounddiv_1_5[[i]])])
+  rarefied_sounddiv_1_5[[i]]$site <- names(rarefied_sounddiv_1_5)[i]
+
+  rarefied_sounddiv_1_10[[i]] <- distinct(rarefied_sounddiv_1_10[[i]][,2:ncol(rarefied_sounddiv_1_10[[i]])])
+  rarefied_sounddiv_1_10[[i]]$site <- names(rarefied_sounddiv_1_10)[i]
+
+  rarefied_sounddiv_1_15[[i]] <- distinct(rarefied_sounddiv_1_15[[i]][,2:ncol(rarefied_sounddiv_1_15[[i]])])
+  rarefied_sounddiv_1_15[[i]]$site <- names(rarefied_sounddiv_1_15)[i]
+
+  rarefied_sounddiv_1_20[[i]] <- distinct(rarefied_sounddiv_1_20[[i]][,2:ncol(rarefied_sounddiv_1_20[[i]])])
+  rarefied_sounddiv_1_20[[i]]$site <- names(rarefied_sounddiv_1_20)[i]
+
+  rarefied_sounddiv_1_30[[i]] <- distinct(rarefied_sounddiv_1_30[[i]][,2:ncol(rarefied_sounddiv_1_30[[i]])])
+  rarefied_sounddiv_1_30[[i]]$site <- names(rarefied_sounddiv_1_30)[i]
+
+  rarefied_sounddiv_1_60[[i]] <- distinct(rarefied_sounddiv_1_60[[i]][,2:ncol(rarefied_sounddiv_1_60[[i]])])
+  rarefied_sounddiv_1_60[[i]]$site <- names(rarefied_sounddiv_1_60)[i]
+
+
+}
+
+
+rarefied_sounddiv_1_5 <- rbindlist(rarefied_sounddiv_1_5)
+rarefied_sounddiv_1_10 <- rbindlist(rarefied_sounddiv_1_10)
+rarefied_sounddiv_1_15 <- rbindlist(rarefied_sounddiv_1_15)
+rarefied_sounddiv_1_20 <- rbindlist(rarefied_sounddiv_1_20)
+rarefied_sounddiv_1_30 <- rbindlist(rarefied_sounddiv_1_30)
+rarefied_sounddiv_1_60 <- rbindlist(rarefied_sounddiv_1_60)
+
+rarefied_sounddiv_1_5_q0 <- rarefied_sounddiv_1_5
+rarefied_sounddiv_1_10_q0 <- rarefied_sounddiv_1_10
+rarefied_sounddiv_1_15_q0 <- rarefied_sounddiv_1_15
+rarefied_sounddiv_1_20_q0 <- rarefied_sounddiv_1_20
+rarefied_sounddiv_1_30_q0 <- rarefied_sounddiv_1_30
+rarefied_sounddiv_1_60_q0 <- rarefied_sounddiv_1_60
+
+for (i in 1:length(rarefied_sounddiv_1_5_q0)){
+
+  rarefied_sounddiv_1_5_q0 <- subset(rarefied_sounddiv_1_5_q0,
+                                     rarefied_sounddiv_1_5_q0$order==0)
+
+  rarefied_sounddiv_1_10_q0 <- subset(rarefied_sounddiv_1_10_q0,
+                                     rarefied_sounddiv_1_10_q0$order==0)
+
+  rarefied_sounddiv_1_15_q0 <- subset(rarefied_sounddiv_1_15_q0,
+                                     rarefied_sounddiv_1_15_q0$order==0)
+
+  rarefied_sounddiv_1_20_q0 <- subset(rarefied_sounddiv_1_20_q0,
+                                     rarefied_sounddiv_1_20_q0$order==0)
+
+  rarefied_sounddiv_1_30_q0 <- subset(rarefied_sounddiv_1_30_q0,
+                                     rarefied_sounddiv_1_30_q0$order==0)
+
+  rarefied_sounddiv_1_60_q0 <- subset(rarefied_sounddiv_1_60_q0,
+                                     rarefied_sounddiv_1_60_q0$order==0)
+
+  rarefied_sounddiv_1_5_q1 <- subset(rarefied_sounddiv_1_5,
+                                     rarefied_sounddiv_1_5$order==1)
+
+  rarefied_sounddiv_1_10_q1 <- subset(rarefied_sounddiv_1_10,
+                                      rarefied_sounddiv_1_10$order==1)
+
+  rarefied_sounddiv_1_15_q1 <- subset(rarefied_sounddiv_1_15,
+                                      rarefied_sounddiv_1_15$order==1)
+
+  rarefied_sounddiv_1_20_q1 <- subset(rarefied_sounddiv_1_20,
+                                      rarefied_sounddiv_1_20$order==1)
+
+  rarefied_sounddiv_1_30_q1 <- subset(rarefied_sounddiv_1_30,
+                                      rarefied_sounddiv_1_30$order==1)
+
+  rarefied_sounddiv_1_60_q1 <- subset(rarefied_sounddiv_1_60,
+                                      rarefied_sounddiv_1_60$order==1)
+
+  rarefied_sounddiv_1_5_q2 <- subset(rarefied_sounddiv_1_5,
+                                     rarefied_sounddiv_1_5$order==2)
+
+  rarefied_sounddiv_1_10_q2 <- subset(rarefied_sounddiv_1_10,
+                                      rarefied_sounddiv_1_10$order==2)
+
+  rarefied_sounddiv_1_15_q2 <- subset(rarefied_sounddiv_1_15,
+                                      rarefied_sounddiv_1_15$order==2)
+
+  rarefied_sounddiv_1_20_q2 <- subset(rarefied_sounddiv_1_20,
+                                      rarefied_sounddiv_1_20$order==2)
+
+  rarefied_sounddiv_1_30_q2 <- subset(rarefied_sounddiv_1_30,
+                                      rarefied_sounddiv_1_30$order==2)
+
+  rarefied_sounddiv_1_60_q2 <- subset(rarefied_sounddiv_1_60,
+                                      rarefied_sounddiv_1_60$order==2)
+
+
+}
+
+rarefied_sounddiv_1_5_q0$regime <- "1/5 min"
+rarefied_sounddiv_1_5_q1$regime <- "1/5 min"
+rarefied_sounddiv_1_5_q2$regime <- "1/5 min"
+
+rarefied_sounddiv_1_10_q0$regime <- "1/10 min"
+rarefied_sounddiv_1_10_q1$regime <- "1/10 min"
+rarefied_sounddiv_1_10_q2$regime <- "1/10 min"
+
+rarefied_sounddiv_1_15_q0$regime <- "1/15 min"
+rarefied_sounddiv_1_15_q1$regime <- "1/15 min"
+rarefied_sounddiv_1_15_q2$regime <- "1/15 min"
+
+rarefied_sounddiv_1_20_q0$regime <- "1/20 min"
+rarefied_sounddiv_1_20_q1$regime <- "1/20 min"
+rarefied_sounddiv_1_20_q2$regime <- "1/20 min"
+
+rarefied_sounddiv_1_30_q0$regime <- "1/30 min"
+rarefied_sounddiv_1_30_q1$regime <- "1/30 min"
+rarefied_sounddiv_1_30_q2$regime <- "1/30 min"
+
+rarefied_sounddiv_1_60_q0$regime <- "1/60 min"
+rarefied_sounddiv_1_60_q1$regime <- "1/60 min"
+rarefied_sounddiv_1_60_q2$regime <- "1/60 min"
+
+# Divide by total number of detectable OSUs to get proportion
+
+rarefied_sounddiv_1_5_q0$qD <- (rarefied_sounddiv_1_5_q0$qD / (288*83))*100
+rarefied_sounddiv_1_5_q1$qD <- (rarefied_sounddiv_1_5_q1$qD / (288*83))*100
+rarefied_sounddiv_1_5_q2$qD <- (rarefied_sounddiv_1_5_q2$qD / (288*83))*100
+
+rarefied_sounddiv_1_10_q0$qD <- (rarefied_sounddiv_1_10_q0$qD / (144*83))*100
+rarefied_sounddiv_1_10_q1$qD <- (rarefied_sounddiv_1_10_q1$qD / (144*83))*100
+rarefied_sounddiv_1_10_q2$qD <- (rarefied_sounddiv_1_10_q2$qD / (144*83))*100
+
+rarefied_sounddiv_1_15_q0$qD <- (rarefied_sounddiv_1_15_q0$qD / (96*83))*100
+rarefied_sounddiv_1_15_q1$qD <- (rarefied_sounddiv_1_15_q1$qD / (96*83))*100
+rarefied_sounddiv_1_15_q2$qD <- (rarefied_sounddiv_1_15_q2$qD / (96*83))*100
+
+rarefied_sounddiv_1_20_q0$qD <- (rarefied_sounddiv_1_20_q0$qD / (72*83))*100
+rarefied_sounddiv_1_20_q1$qD <- (rarefied_sounddiv_1_20_q1$qD / (72*83))*100
+rarefied_sounddiv_1_20_q2$qD <- (rarefied_sounddiv_1_20_q2$qD / (72*83))*100
+
+rarefied_sounddiv_1_30_q0$qD <- (rarefied_sounddiv_1_30_q0$qD / (48*83))*100
+rarefied_sounddiv_1_30_q1$qD <- (rarefied_sounddiv_1_30_q1$qD / (48*83))*100
+rarefied_sounddiv_1_30_q2$qD <- (rarefied_sounddiv_1_30_q2$qD / (48*83))*100
+
+rarefied_sounddiv_1_60_q0$qD <- (rarefied_sounddiv_1_60_q0$qD / (24*83))*100
+rarefied_sounddiv_1_60_q1$qD <- (rarefied_sounddiv_1_60_q1$qD / (24*83))*100
+rarefied_sounddiv_1_60_q2$qD <- (rarefied_sounddiv_1_60_q2$qD / (24*83))*100
+
+library(dplyr)
+
+rarefied_sounddiv_q0_total <- bind_rows(rarefied_sounddiv_1_5_q0,
+                                        rarefied_sounddiv_1_10_q0,
+                                        rarefied_sounddiv_1_15_q0,
+                                        rarefied_sounddiv_1_20_q0,
+                                        rarefied_sounddiv_1_30_q0,
+                                        rarefied_sounddiv_1_60_q0)
+
+rarefied_sounddiv_q1_total <- bind_rows(rarefied_sounddiv_1_5_q1,
+                                        rarefied_sounddiv_1_10_q1,
+                                        rarefied_sounddiv_1_15_q1,
+                                        rarefied_sounddiv_1_20_q1,
+                                        rarefied_sounddiv_1_30_q1,
+                                        rarefied_sounddiv_1_60_q1)
+
+rarefied_sounddiv_q2_total <- bind_rows(rarefied_sounddiv_1_5_q2,
+                                        rarefied_sounddiv_1_10_q2,
+                                        rarefied_sounddiv_1_15_q2,
+                                        rarefied_sounddiv_1_20_q2,
+                                        rarefied_sounddiv_1_30_q2,
+                                        rarefied_sounddiv_1_60_q2)
+
+```
+
+#### Assessing the taxonomic richness ~ functional soundscape diversity relationship
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+taxonomic_richness <- total_richness
+
+colnames(taxonomic_richness)[1] <-c("site")
+
+rarefied_sounddiv_q0_total <- merge(x=rarefied_sounddiv_q0_total,
+                              y = taxonomic_richness,
+                              by="site")
+
+
+rarefied_sounddiv_q0_total$regime <- factor(rarefied_sounddiv_q0_total$regime,
+                                            levels = c("1/5 min", "1/10 min", "1/15 min", "1/20 min", "1/30 min", "1/60 min"), labels = c("1/5 min", "1/10 min", "1/15 min", "1/20 min", "1/30 min", "1/60 min"))
+
+# P-value formatting function for stat_cor
+
+format_pval <- function(pval){
+  pval <- scales::pvalue(pval, accuracy= 0.001, add_p = TRUE)
+  pval
+}
+
+sampling_regime_plot <-
+
+  ggplot(rarefied_sounddiv_q0_total, aes(total_tax, qD, group=regime))+
+  facet_wrap(~regime)+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = max(rarefied_sounddiv_q0_total$qD),
+    size=6,
+    method="pearson",
+    digits = 2)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 14, face="bold")) +
+
+  xlab("\n Richness of soniferous species")+
+  ylab("Soundscape richness (%) \n")
+
+
+```
+
+#### Plotting
+
+```{r, fig.width=15, fig.height=15, dpi=600, dev='jpeg'}
+plot(sampling_regime_plot)
+```
+
+
+### 1.2. Providing recommendations regarding the required sampling duration at the highest intensity sampling regime (1 / 5 minutes)
+
+Here, we hope to provide recommendations regarding what constitutes an ideal in-field sampling effort to reliably quantify relationships between sites. Yet, the sampling duration can only be reliably extrapolated to double the minimal sampling effort to quantify the exact relationships among sites. Given the constraints of our dataset, as the minimal sampling duration is 4 days, we cannot reliably assess how longer sampling durations (e.g. > 20 days) influence these exact relationships. Instead, we will focus on the relative functional soundscape richness ranking among sites, which can be extrapolated to multiple time the minimal sampling effort in a reliable manner
+
+#### Rarefying the sampling effort to high sampling duration (28 days)
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# 1 / 5 minutes
+
+inext_2 <- iNEXT(x = accum_1_5, q = c(0), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2[[2]])){
+
+  inext_2[[2]][[i]]$site <- names(inext_2[[2]])[i]
+
+}
+
+data <- rbindlist(inext_2[[2]])
+data <- distinct(data)
+
+    # 1/10
+
+inext_2_1_10 <- iNEXT(x = accum_1_10, q = c(0,2), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2_1_10[[2]])){
+
+  inext_2_1_10[[2]][[i]]$site <- names(inext_2_1_10[[2]])[i]
+
+}
+
+data_1_10 <- rbindlist(inext_2_1_10[[2]])
+
+data_1_10 <- distinct(data_1_10)
+
+    # 1/15
+
+inext_2_1_15 <- iNEXT(x = accum_1_15, q = c(0,2), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2_1_15[[2]])){
+
+  inext_2_1_15[[2]][[i]]$site <- names(inext_2_1_15[[2]])[i]
+
+}
+
+data_1_15 <- rbindlist(inext_2_1_15[[2]])
+
+data_1_15 <- distinct(data_1_15)
+
+    # 1/20
+
+inext_2_1_20 <- iNEXT(x = accum_1_20, q = c(0,2), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2_1_20[[2]])){
+
+  inext_2_1_20[[2]][[i]]$site <- names(inext_2_1_20[[2]])[i]
+
+}
+
+data_1_20 <- rbindlist(inext_2_1_20[[2]])
+
+data_1_20 <- distinct(data_1_20)
+
+    #1/30
+
+inext_2_1_30 <- iNEXT(x = accum_1_30, q = c(0,2), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2_1_30[[2]])){
+
+  inext_2_1_30[[2]][[i]]$site <- names(inext_2_1_30[[2]])[i]
+
+}
+
+data_1_30 <- rbindlist(inext_2_1_30[[2]])
+
+data_1_30 <- distinct(data_1_30)
+
+    # 1/60
+
+inext_2_1_60 <- iNEXT(x = accum_1_60, q = c(0,2), datatype = "incidence_raw", endpoint = 28)
+
+for (i in 1:length(inext_2_1_60[[2]])){
+
+  inext_2_1_60[[2]][[i]]$site <- names(inext_2_1_60[[2]])[i]
+
+}
+
+data_1_60 <- rbindlist(inext_2_1_60[[2]])
+
+data_1_60 <- distinct(data_1_60)
+
+```
+
+#### Assessing the relative ranking in the functional soundscape richness between sites
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# 1 / 5 min recording
+
+data_1_5_q0 <- subset(data, data$order==0)
+data_1_5_q0 <- data_1_5_q0[,c(1, 4, 10)]
+
+
+rank_change_1_5 <- rank_shift(df = data_1_5_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_5$t <- seq(1.5, 27.5, 1)
+
+fit_1_5 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_5)
+summary(fit_1_5)
+
+fit_1_5_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_5[2:3], start = c(a=2.97478, b=0.40678926664))
+
+summary(fit_1_5_B)
+
+fit_1_5_B
+
+# 1 / 10 min recording
+
+data_1_10_q0 <- subset(data_1_10, data_1_10$order==0)
+data_1_10_q0 <- data_1_10_q0[,c(1, 4, 10)]
+
+
+rank_change_1_10 <- rank_shift(df = data_1_10_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_10$t <- seq(1.5, 27.5, 1)
+
+fit_1_10 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_10)
+summary(fit_1_10)
+
+fit_1_10_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_10[2:3], start = c(a=2.85980, b=0.40822777022))
+
+summary(fit_1_10_B)
+
+
+# 1 / 15 min recording
+
+data_1_15_q0 <- subset(data_1_15, data_1_15$order==0)
+data_1_15_q0 <- data_1_15_q0[,c(1, 4, 10)]
+
+
+rank_change_1_15 <- rank_shift(df = data_1_15_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_15$t <- seq(1.5, 27.5, 1)
+
+fit_1_15 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_15)
+summary(fit_1_15)
+
+fit_1_15_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_15[2:3], start = c(a=3.93177, b=0.52822127585))
+
+summary(fit_1_15_B)
+
+# 1 / 20 min recording
+
+data_1_20_q0 <- subset(data_1_20, data_1_20$order==0)
+data_1_20_q0 <- data_1_20_q0[,c(1, 4, 10)]
+
+
+rank_change_1_20 <- rank_shift(df = data_1_20_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_20$t <- seq(1.5, 27.5, 1)
+
+fit_1_20 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_20)
+summary(fit_1_20)
+
+fit_1_20_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_20[2:3], start = c(a=4.39453, b=0.58748768199))
+
+summary(fit_1_20_B)
+
+# 1 / 30 min recording
+
+data_1_30_q0 <- subset(data_1_30, data_1_30$order==0)
+data_1_30_q0 <- data_1_30_q0[,c(1, 4, 10)]
+
+
+rank_change_1_30 <- rank_shift(df = data_1_30_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_30$t <- seq(1.5, 27.5, 1)
+
+fit_1_30 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_30)
+summary(fit_1_30)
+
+fit_1_30_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_30[2:3], start = c(a=4.97993, b=0.67001846987))
+
+summary(fit_1_30_B)
+
+# 1 / 60 min recording
+
+data_1_60_q0 <- subset(data_1_60, data_1_60$order==0)
+data_1_60_q0 <- data_1_60_q0[,c(1, 4, 10)]
+
+
+rank_change_1_60 <- rank_shift(df = data_1_60_q0, time.var = "t", species.var ="site", abundance.var = "qD")
+
+rank_change_1_60$t <- seq(1.5, 27.5, 1)
+
+fit_1_60 <- nls(MRS ~ SSasymp(t, Asym, R0, lrc), data = rank_change_1_60)
+summary(fit_1_60)
+
+fit_1_60_B <- nls(formula=(MRS ~ a * exp(-b*t)), data=rank_change_1_60[2:3], start = c(a=4.34450, b=0.5792796095))
+
+summary(fit_1_60_B)
+
+# Bind the mean rank change data together
+
+rank_change_1_5$regime <- "1/5 min"
+rank_change_1_10$regime <- "1/10 min"
+rank_change_1_15$regime <- "1/15 min"
+rank_change_1_20$regime <- "1/20 min"
+rank_change_1_30$regime <- "1/30 min"
+rank_change_1_60$regime <- "1/60 min"
+
+rank_change_all <- rbind(rank_change_1_5,
+                         rank_change_1_10,
+                         rank_change_1_15,
+                         rank_change_1_20,
+                         rank_change_1_30,
+                         rank_change_1_60)
+
+rank_change_all$regime <- factor(rank_change_all$regime, levels = c("1/5 min",
+                                                                    "1/10 min",
+                                                                    "1/15 min",
+                                                                    "1/20 min",
+                                                                    "1/30 min",
+                                                                    "1/60 min"))
+
+```
+
+#### Plotting
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+rank_change_all$geom_vline <- c(rep(10, 27), 
+                                rep(10, 27), 
+                                rep(9.2, 27), 
+                                rep(8.4, 27), 
+                                rep(8.7, 27), 
+                                rep(8.7, 27))
+
+mean_rank_plot <-
+
+  ggplot(rank_change_all, aes(t, MRS, group=regime))+
+  geom_smooth(method = "nls", formula = y ~ a * exp(-S * x),
+              method.args = list(start = list(a=2.97478, S=0.40678926664
+              )), se = FALSE, #starting values obtained from fit above
+              color = "dark red", size=1.2)+
+  theme_classic() +
+  scale_x_continuous(limits = c(1, 28))+
+  xlab("\n Number of 24h sampling days")+
+  ylab("Mean Rank Shift \n")+
+  facet_wrap(~regime)+
+  geom_hline(aes(yintercept=c(0.1)), linetype="dashed", size=1)+
+  geom_vline(aes(xintercept=geom_vline), linetype="dashed", size=1)+
+  geom_point(shape=21, fill="white", stroke=1.2, size=3)+
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=20),
+        axis.title.y = element_text(size=20),
+        panel.spacing = unit(2, "lines"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, face="bold"))
+
+```
+
+
+```{r, fig.width=15, fig.height=15, dpi=600, dev='jpeg'}
+plot(mean_rank_plot)
+```
