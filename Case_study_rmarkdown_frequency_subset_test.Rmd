@@ -1,0 +1,1397 @@
+---
+title: "Luypaert et al. (2021) - Case study"
+author: '"Thomas Luypaert - Norwegian University of Life Sciences"'
+date: "9/22/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This script accompanies the case study provided in Luypaert et al. (2021). In this case study, we test the behavior of the proposed soundscape diversity metrics along an ecological gradient in species richness in a sonically complex rain forest landscape. The figure produced in this script corresponds to Fig. 4 in the main text. 
+
+Part 1 of the script contains the code for the compilation of the taxonomic richness data for frogs, birds and monkeys. For the former two groups, taxonomic richness data was derived from the same acoustic recordings as the functional soundscape diversity metrics. For the latter, richness data was compiled from previous research in the area (Benchimol & Peres 2015). 
+
+Part 2 contains the calculation of the soundscape diversity metrics as outlined in the main text of Luypaert et al. (2021). Finally, in part 3, we combine the taxonomic richness with the soundscape diversity metrics and compute the Pearson correlation coefficient to assess the relationship between both. 
+
+## 0. Loading the required packages & downloading the raw data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# Loading packages
+
+library(readr)
+library(data.table)
+library(knitr)
+library(hilldiv)
+library(ggplot2)
+library(viridis)
+library(dataone)
+library(iNEXT)
+library(devtools)
+library(dataone)
+library(dplyr)
+library(soundscapeR)
+library(ggpubr)
+library(ggforce)
+library(scales)
+library(patchwork)
+library(purrr)
+library(boot)
+
+```
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Downloading data from the KNB repository
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+queryParamList <- list(q="id:doi*10.5063/F1MS3R6W", fl="id,title")
+result <- query(mn, solrQuery=queryParamList, as="data.frame")
+packagePid <- result[1,1]
+
+cn <- CNode()
+mn <- getMNode(cn, "urn:node:KNB")
+bagitFileName <- getPackage(mn, id=packagePid)
+bagitFileName <- gsub("\\\\", "/", as.character(bagitFileName))
+
+to_unzip <- unzip(zipfile = bagitFileName, list = TRUE)
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[c(3, 5, 7, 8),1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+list.dirs.depth.n <- function(p, n) {
+  res <- list.dirs(p, recursive = FALSE)
+  if (n > 1) {
+    add <- list.dirs.depth.n(res, n-1)
+    c(res, add)
+  } else {
+    res
+  }
+}
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = bagitFileName, 
+      files = to_unzip[4,1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+unzip(zipfile = locations[1], 
+      exdir = paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted", "/data/",gsub("\\.zip", "", basename(locations[1]))))
+
+locations <- list.files(list.dirs.depth.n(p=paste0(gsub(sub(".*/", "", bagitFileName), "", bagitFileName), "extracted"), n=2), full.names = TRUE)
+
+```
+
+## 1. Compiling the taxonomic richness data
+
+### 1.1. Anuran data
+
+The anuran data was derived from the aural and visual identification of anuran vocalisations by a trained expert (Gabriel Masseli) using the RFCx ARBIMON Visualizer Tool (ENTER LINK). All species identities were cross-verified by second observer (Igor Kaefer) to ensure accuracy. The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+```{r,eerror=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- read_csv(locations[4], show_col_types = FALSE)
+
+```
+
+#### Remove rows containing 'None' for the species
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[!frog_man$species=="None",]
+frog_man <- frog_man[!frog_man$species=="Malfunctioning",]
+
+```
+
+#### Remove all the riparian sites from the data
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man <- frog_man[-grep("_Rip", frog_man$plot), ]
+
+```
+
+#### Subset to contain only the plots used in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_man$plot <- gsub("-", "_", frog_man$plot)
+frog_man$plot <- gsub("Waba", "WABA", frog_man$plot)
+
+wanted <- c("Abusado",
+            "Adeus_A", 
+            "Adeus_B",
+            "Aline",
+            "Andre",
+            "Arrepiado", 
+            "Bacaba_B",
+            "Beco_do_Catitu_A",
+            "Beco_do_Catitu_B",
+            "Beco_do_Catitu_D",
+            "Beco_do_Catitu_E",
+            "Cafundo",
+            "CF_Grid_CampTrail_A",
+            "CF_Grid_NS3_1200", 
+            "CF_Loreno_A", 
+            "CF_Loreno_B", 
+            "CF_WABA_B", 
+            "CF_WABA_C", 
+            "Cipoal_A", 
+            "Cipoal_B", 
+            "Cipoal_C", 
+            "Coata", 
+            "Formiga", 
+            "Furo_de_Santa_Luzia_B", 
+            "Furo_de_Santa_Luzia_C", 
+            "Fuzaca_B", 
+            "Fuzaca_C", 
+            "Fuzaca_D", 
+            "Garrafa", 
+            "Gaviao_real_A", 
+            "Gaviao_real_B", 
+            "Gaviao_real_C", 
+            "Gaviao_real_D", 
+            "Jabuti_A", 
+            "Jabuti_B", 
+            "Jabuti_C", 
+            "Jiquitaia", 
+            "Joaninha", 
+            "Martelo_B", 
+            "Martelo_C", 
+            "Mascote_A1", 
+            "Mascote_A2", 
+            "Mascote_B1", 
+            "Mascote_B2", 
+            "Moita_A", 
+            "Moita_B", 
+            "Palhal", 
+            "Panema", 
+            "Pe_Torto", 
+            "Piquia", 
+            "Pontal_B", 
+            "Pontal_C", 
+            "Porto_Seguro_B", 
+            "Porto_Seguro_C", 
+            "Porto_Seguro_D", 
+            "Relogio_B", 
+            "Sapupara_A", 
+            "Sapupara_B", 
+            "Torem", 
+            "Tristeza_A", 
+            "Tristeza_B", 
+            "Tristeza_C", 
+            "Tucumari_A", 
+            "Tucumari_B", 
+            "Tucumari_C")          
+
+frog_man <- frog_man[with(frog_man, plot %in% wanted ),]
+
+```
+
+#### Count the number of unique frog species per site 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+frog_df_richness <- aggregate(data = frog_man,
+                      species ~ site,
+                      function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+# frog_df_richness <- aggregate(data = frog_man,
+#                           species ~ plot,
+#                           mean)
+
+colnames(frog_df_richness) <- c("site", "anuran_richness")
+
+frog_df_richness$site <- toupper(frog_df_richness$site)
+
+knitr::kable(frog_df_richness, caption = "Anuran taxonomic species richness per island", align = "l") 
+
+```
+
+### 1.2. Avian data 
+
+The avian data was derived from the pattern matching algorithm available on the RFCx ARBIMON Platform: <https://arbimon.rfcx.org/project/balbina>, combined with visual and aural verification by a trained expert (Marconi Campos-Cerqueira). The data can be downloaded from the ARBIMON Platform directly using aforementioned link. The compiled data is also available on the KNB repository (see below). 
+
+#### Load the data into R
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_files <- list.files(path = locations[3], full.names = TRUE)
+
+bird_list <- vector("list", length = length(bird_files))
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- read_csv(bird_files[i], show_col_types = FALSE)
+  
+}
+
+names(bird_list) <- gsub(".csv", "", basename(bird_files))
+
+```
+
+#### Modify the site names to match the sites in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$site <- gsub('\\.', '_', bird_list[[i]]$site)
+  bird_list[[i]]$site <- gsub('-', '_', bird_list[[i]]$site)
+  
+}
+
+
+```
+
+#### Filter the data by sites in the soundscape study
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][with(bird_list[[i]], site %in% wanted ),]
+  
+}
+
+
+```
+
+#### Filter to retain only the verified records 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]] <- bird_list[[i]][bird_list[[i]]$validated=="present",]
+  
+}
+
+```
+
+#### Add a species column to the data and rbind 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+for (i in 1:length(bird_list)){
+  
+  bird_list[[i]]$species <- names(bird_list)[i]
+  
+}
+
+bird_df <- rbindlist(bird_list)
+
+```
+
+#### Make the species names uniform across call types
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df$species <- gsub("1|2|_call|_duet|_nocturnal", "", bird_df$species)
+
+bird_df$species[bird_df$species=="Glyphorynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+bird_df$species[bird_df$species=="Glyphorhynchus_spirurus"] <- "Glyphorynchus_spirurus"
+
+```
+
+#### Make the plot names uniform per island
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+island_name <- bird_df$site
+island_name <- gsub(pattern = "_A$", "", island_name)
+island_name <- gsub(pattern = "_A.$", "", island_name)
+island_name <- gsub(pattern = "_B$", "", island_name)
+island_name <- gsub(pattern = "_B.$", "", island_name)
+island_name <- gsub(pattern = "_C$", "", island_name)
+island_name <- gsub(pattern = "_D$", "", island_name)
+island_name <- gsub(pattern = "_E$", "", island_name)
+island_name <- gsub(pattern = "_CampTrail$", "", island_name)
+island_name <- gsub(pattern = "_NS3_1200$", "", island_name)
+
+bird_df$site <- island_name
+
+```
+
+#### Count the number of unique species per plot 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+bird_df_richness <- aggregate(data = bird_df,
+                     species ~ site,
+                     function(x) length(unique(x)))
+
+```
+
+#### Create a site by species list
+
+```{r}
+
+colnames(bird_df_richness) <- c("site", "avian_richness")
+
+bird_df_richness$site <- toupper(bird_df_richness$site)
+
+knitr::kable(bird_df_richness, caption = "Avian taxonomic species richness per island", align = "l") 
+
+```
+
+
+### 1.3. Monkey data
+
+The monkey taxonomic richness data was compiled from a previous study in the area which collected taxonomic data for terresrial vertebrates (Benchimol & Peres 2015). For more information, consult the main manuscript of Luypaert et al. (2021) or head on over to the original paper: <https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0129818#sec014>
+
+#### Load the data into R
+
+```{r}
+
+monkey_df_richness <- read_csv(locations[6], show_col_types = FALSE)
+
+colnames(monkey_df_richness) <- c("site", "primate_richness")
+
+monkey_df_richness$site <- gsub("-", "_", monkey_df_richness$site)
+
+monkey_df_richness$site <- toupper(monkey_df_richness$site)
+
+knitr::kable(monkey_df_richness, caption = "Primate taxonomic richness per island")
+
+```
+
+### 1.4. Compiling the taxonomic richness data into a single metric
+
+```{r}
+
+total_richness <- merge(
+  merge(frog_df_richness, bird_df_richness, by="site"), 
+  monkey_df_richness, by="site")
+
+total_richness$total_tax <- total_richness$anuran_richness + total_richness$avian_richness + total_richness$primate_richness
+
+knitr::kable(total_richness, caption = "Total taxnomic richness of soniferous species per island")
+
+```
+
+## 2. Calculating the functional soundscape diversity metrics
+
+### 2.1. Calculating the spectral acoustic indices
+
+For the first step of our workflow, we will calculate the spectral acoustic indices using the 'index_calc' function of the 'soundscapeR' package. This function uses the software 'AnalysisPrograms', created by the QUT Ecoacoustics Group, which should be installed on your device prior to starting this analysis. For instructions on how to download this software, visit: <https://ap.qut.ecoacoustics.info/tutorials/01-usingap/practical?tabs=windows>
+
+**Note:** This step will take a long time to complete. To avoid long waiting times, skip to step 2. 
+
+To download the raw sound files, head on over to:
+"ENTER THE LOCATION TO THE DRYAD REPOSITORY UPON ACCEPTANCE"
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+# Functions for index computation will be updated once the data is available for download online
+
+# 
+# soundfiles <- setwd("PATH_TO_DOWNLOADED_AND_UNZIPPED_DATA")
+# 
+# for (i in 1:length(soundfiles)){
+#   
+#   soundscapeR::index_calc(fileloc = soundfiles[i], 
+#                           progloc = "LOCATION_OF_ANALYSISPROGRAMS_SOFTWARE_ON_DEVICE", 
+#                           samplerate = "44100", 
+#                           window = 256, 
+#                           parallel = TRUE)
+#   
+# }
+
+
+```
+
+### 2.2. Chronological concatenation of CVR-index files
+
+Once the spectral acoustic indices have been calculated, we will concatenate the CVR-index chronologically per site. To do this, we will use the 'merge_csv' function from the 'soundscapeR' package.
+
+This function will be updated once the soundscape data is online. For now, skip to **step 3**. 
+
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# These functions will be updated once the data is online
+
+# output_locs <- list.dirs(path = "PATH_TO_LOCATION_INDEX_FILES", full.names = TRUE, recursive = FALSE)
+
+# Merge csv files
+
+# merged_csv_list <- vector("list")
+# 
+# for(i in 1:length(output_locs)){
+# 
+#   merged_csv_list[[i]] <- merge_csv(fileloc = output_locs[i],
+#                                samplerate = 44100,
+#                                window = 256,
+#                                index = "CVR",
+#                                date = "2019-09-05",
+#                                lat = -1.584333,
+#                                lon=-59.872,
+#                                twilight = "sunlight")
+# 
+#   print(paste0(output_locs[i], " ", "done!"))
+#   Sys.sleep(0.00000000000000000000000000000001)
+# 
+# }
+
+# Alternatively, load the intermediate merged CVR data from the downloaded dataset:
+
+load(locations[5])
+
+merged_csv_list <- merged_csv_list_256
+
+frequency_bins <- as.integer(
+  seq(
+    from = (44100/256),
+    to = 44100 / 2,
+    by = (44100/256)))
+
+for (i in 1:length(merged_csv_list)){
+  
+  rownames(merged_csv_list[[i]]@merged_df) <- rev(frequency_bins)
+  
+}
+
+```
+
+### 2.3. Binarisation of CVR-index data
+
+Once the CVR-index files have been concatenated chronologically, we will apply a binarisation algorithm to the data to turn raw index values into detection/non-detection data. This is done to assess the presence/absence of our Operational Sound Units throughout the recording period. 
+
+Here we will use the 'IsoData' binarisation algorithm available in the 'autothresholdr' R-package. To do the binarisation, we can use the 'threshold_df' and 'binarize_df' functions available in the 'soundscapeR' package. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+thresh_list <- vector("list", length = length(merged_csv_list))
+
+for (i in 1:length(thresh_list)){
+  
+  threshold <- threshold_df(df = merged_csv_list[[i]]@merged_df, method = "IsoData")
+
+  thresh_list[[i]] <- binarize_df(merged_soundscape = merged_csv_list[[i]], method = "custom", value = threshold)
+  
+}
+
+```
+
+
+### 2.4. Separating the OSUs into 24-hour samples of acoustic trait space
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+sample_list <- vector("list", length(thresh_list))
+
+duration_start <- seq(1, 2593, 288)
+duration_end <- seq(288, 2880, 288)
+
+
+for (i in 1:length(thresh_list)){
+
+  sample_list[[i]] <- vector("list", length = length(duration_end))
+
+  for (j in 1:length(duration_start)){
+
+    sample_list[[i]][[j]] <- thresh_list[[i]]
+
+  }
+
+  names(sample_list[[i]]) <- seq(1, length(duration_start), 1)
+
+}
+
+names(sample_list) <- names(merged_csv_list)
+
+for (i in 1:length(sample_list)){
+
+  for (j in 1:length(sample_list[[i]])){
+
+    if(ncol(sample_list[[i]][[j]]@binarized_df) >= duration_end[j]){
+
+      sample_list[[i]][[j]]@merged_df <- sample_list[[i]][[j]]@merged_df[,duration_start[j]:duration_end[j]]
+
+      sample_list[[i]][[j]]@binarized_df <- sample_list[[i]][[j]]@binarized_df[,duration_start[j]:duration_end[j]]
+
+    }
+
+    else{
+
+      sample_list[[i]][[j]] <- as.list(c(NA))
+
+    }
+
+  }
+
+}
+
+for (i in 1:length(sample_list)){
+
+  if (length(which(sapply(sample_list[[i]], function(x) is.list(x))))==0){
+
+    sample_list[[i]] <- sample_list[[i]]
+  }
+
+  else{
+
+    sample_list[[i]] <- sample_list[[i]][-which(sapply(sample_list[[i]], function(x) is.list(x)))]
+
+  }
+
+}
+
+```
+
+### 2.5. Subsetting the frequency spectrum 3 different ways
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+  # 1. No frequency subsetting
+
+sample_list_total <- sample_list
+
+  # 2. Frequency subset between 2 kHz and 8 kHz
+
+sample_list_2_8 <- sample_list
+
+for (i in 1:length(sample_list_2_8)){
+
+  for(j in 1:length(sample_list_2_8[[i]])){
+
+    sample_list_2_8[[i]][[j]]@merged_df <- sample_list_2_8[[i]][[j]]@merged_df[93:nrow(sample_list_2_8[[i]][[j]]@merged_df)-11,]
+
+    sample_list_2_8[[i]][[j]]@binarized_df <- sample_list_2_8[[i]][[j]]@binarized_df[93:nrow(sample_list_2_8[[i]][[j]]@binarized_df)-11,]
+    
+  }
+}
+
+  # 3. Frequency subset below 11,025 Hz
+
+sample_list_11 <- sample_list
+
+for (i in 1:length(sample_list_11)){
+
+  for(j in 1:length(sample_list_11[[i]])){
+
+    sample_list_11[[i]][[j]]@merged_df <- sample_list_11[[i]][[j]]@merged_df[65:nrow(sample_list_11[[i]][[j]]@merged_df),]
+
+    sample_list_11[[i]][[j]]@binarized_df <- sample_list_11[[i]][[j]]@binarized_df[65:nrow(sample_list_11[[i]][[j]]@binarized_df),]
+    
+  }
+}
+
+```
+
+### 2.6. Converting the data into an OSU-by-sample incidence matrix
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+inc_mat_total <- sample_list_total
+inc_mat_2_8 <- sample_list_2_8
+inc_mat_11 <- sample_list_11
+
+  # Total
+
+for (i in 1:length(inc_mat_total)){
+
+  for (j in 1:length(inc_mat_total[[i]])){
+
+    inc_mat_total[[i]][[j]] <- unlist(sample_list_total[[i]][[j]]@binarized_df)
+
+  }
+
+
+  inc_mat_total[[i]] <- as.data.frame(t(data.frame(do.call(rbind, inc_mat_total[[i]]))))
+  rownames(inc_mat_total[[i]]) <-  paste0("OSU", seq(1, nrow(inc_mat_total[[i]]), 1))
+  inc_mat_total[[i]] <- as.matrix(inc_mat_total[[i]])
+
+}
+
+names(inc_mat_total) <- wanted
+
+  # 2-8 Khz
+
+for (i in 1:length(inc_mat_2_8)){
+
+  for (j in 1:length(inc_mat_2_8[[i]])){
+
+    inc_mat_2_8[[i]][[j]] <- unlist(sample_list_2_8[[i]][[j]]@binarized_df)
+
+  }
+
+
+  inc_mat_2_8[[i]] <- as.data.frame(t(data.frame(do.call(rbind, inc_mat_2_8[[i]]))))
+  rownames(inc_mat_2_8[[i]]) <-  paste0("OSU", seq(1, nrow(inc_mat_2_8[[i]]), 1))
+  inc_mat_2_8[[i]] <- as.matrix(inc_mat_2_8[[i]])
+
+}
+
+names(inc_mat_2_8) <- wanted
+
+  # Below 11,025 kHz
+
+for (i in 1:length(inc_mat_11)){
+
+  for (j in 1:length(inc_mat_11[[i]])){
+
+    inc_mat_11[[i]][[j]] <- unlist(sample_list_11[[i]][[j]]@binarized_df)
+
+  }
+
+
+  inc_mat_11[[i]] <- as.data.frame(t(data.frame(do.call(rbind, inc_mat_11[[i]]))))
+  rownames(inc_mat_11[[i]]) <-  paste0("OSU", seq(1, nrow(inc_mat_11[[i]]), 1))
+  inc_mat_11[[i]] <- as.matrix(inc_mat_11[[i]])
+
+}
+
+names(inc_mat_11) <- wanted
+
+```
+
+### 2.7. Combine OSU incidence matrices per island 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+list_name <- names(inc_mat_total)
+list_name <- gsub(pattern = "_A$", "", list_name)
+list_name <- gsub(pattern = "_A.$", "", list_name)
+list_name <- gsub(pattern = "_B$", "", list_name)
+list_name <- gsub(pattern = "_B.$", "", list_name)
+list_name <- gsub(pattern = "_C$", "", list_name)
+list_name <- gsub(pattern = "_D$", "", list_name)
+list_name <- gsub(pattern = "_E$", "", list_name)
+list_name <- gsub(pattern = "_CampTrail$", "", list_name)
+list_name <- gsub(pattern = "_NS3_1200$", "", list_name)
+
+names(inc_mat_total) <- list_name
+names(inc_mat_2_8) <- list_name
+names(inc_mat_11) <- list_name
+
+inc_mat_total <- split(inc_mat_total, names(inc_mat_total)) %>% map(cbind.data.frame)
+
+inc_mat_2_8 <- split(inc_mat_2_8, names(inc_mat_2_8)) %>% map(cbind.data.frame)
+
+inc_mat_11 <- split(inc_mat_11, names(inc_mat_11)) %>% map(cbind.data.frame)
+
+for (i in 1:length(inc_mat_total)){
+  
+  inc_mat_total[[i]] <- as.matrix(inc_mat_total[[i]])
+  inc_mat_2_8[[i]] <- as.matrix(inc_mat_2_8[[i]])
+  inc_mat_11[[i]] <- as.matrix(inc_mat_11[[i]])
+  
+}
+
+```
+
+
+### 2.8. Rarefaction 8 sampling days and calculate the functional soundscape diversity metrics 
+
+Since not all the sites in the study have an equal sampling duration (range of 4-9 days), we will apply a rarefaction procedure to the data. As data can only be reliably extrapolated to twice the minimal sampling duration, we will interpolate / extrapolate the data to 8 sampling days for all sites in the study period. To do this, we will make use of the R-package 'iNEXT'. 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# Rarefy the data to 8 sampling days 
+
+  # Total
+
+rarefied_sounddiv_total <- inc_mat_total
+
+for (i in 1:length(rarefied_sounddiv_total)){
+
+  rarefied_sounddiv_total[[i]] <- NA
+
+}
+
+for (i in 1:length(inc_mat_total)){
+  
+  print(i)
+  Sys.sleep(0.00000000000000000000000000000000000001)
+
+  rarefied_sounddiv_total[[i]] <- estimateD(x = inc_mat_total[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  
+  rarefied_sounddiv_total[[i]] <- distinct(rarefied_sounddiv_total[[i]][,2:ncol(rarefied_sounddiv_total[[i]])])
+  rarefied_sounddiv_total[[i]]$site <- names(rarefied_sounddiv_total)[i]
+
+}
+
+  # Separate the data frames by order of diversity 
+
+rarefied_sounddiv_total <- rbindlist(rarefied_sounddiv_total)
+
+for (i in 1:length(rarefied_sounddiv_total)){
+
+  rarefied_sounddiv_q0_total <- subset(rarefied_sounddiv_total,
+                                     rarefied_sounddiv_total$order==0)
+
+
+  rarefied_sounddiv_q1_total <- subset(rarefied_sounddiv_total,
+                                     rarefied_sounddiv_total$order==1)
+
+
+  rarefied_sounddiv_q2_total <- subset(rarefied_sounddiv_total,
+                                     rarefied_sounddiv_total$order==2)
+
+}
+
+  # 2-8 kHz
+
+rarefied_sounddiv_2_8 <- inc_mat_2_8
+
+for (i in 1:length(rarefied_sounddiv_2_8)){
+
+  rarefied_sounddiv_2_8[[i]] <- NA
+
+}
+
+for (i in 1:length(inc_mat_2_8)){
+  
+  print(i)
+  Sys.sleep(0.00000000000000000000000000000000000001)
+
+  rarefied_sounddiv_2_8[[i]] <- estimateD(x = inc_mat_2_8[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  
+  rarefied_sounddiv_2_8[[i]] <- distinct(rarefied_sounddiv_2_8[[i]][,2:ncol(rarefied_sounddiv_2_8[[i]])])
+  rarefied_sounddiv_2_8[[i]]$site <- names(rarefied_sounddiv_2_8)[i]
+
+}
+
+  # Separate the data frames by order of diversity 
+
+rarefied_sounddiv_2_8 <- rbindlist(rarefied_sounddiv_2_8)
+
+for (i in 1:length(rarefied_sounddiv_2_8)){
+
+  rarefied_sounddiv_q0_2_8 <- subset(rarefied_sounddiv_2_8,
+                                     rarefied_sounddiv_2_8$order==0)
+
+
+  rarefied_sounddiv_q1_2_8 <- subset(rarefied_sounddiv_2_8,
+                                     rarefied_sounddiv_2_8$order==1)
+
+
+  rarefied_sounddiv_q2_2_8 <- subset(rarefied_sounddiv_2_8,
+                                     rarefied_sounddiv_2_8$order==2)
+
+}
+
+  # Below 11,025 kHz
+
+rarefied_sounddiv_11 <- inc_mat_11
+
+for (i in 1:length(rarefied_sounddiv_11)){
+
+  rarefied_sounddiv_11[[i]] <- NA
+
+}
+
+for (i in 1:length(inc_mat_11)){
+  
+  print(i)
+  Sys.sleep(0.00000000000000000000000000000000000001)
+
+  rarefied_sounddiv_11[[i]] <- estimateD(x = inc_mat_11[[i]],
+                                          datatype = "incidence_raw",
+                                          base =  "size",
+                                          level = 8)
+
+  
+  rarefied_sounddiv_11[[i]] <- distinct(rarefied_sounddiv_11[[i]][,2:ncol(rarefied_sounddiv_11[[i]])])
+  rarefied_sounddiv_11[[i]]$site <- names(rarefied_sounddiv_11)[i]
+
+}
+
+  # Separate the data frames by order of diversity 
+
+rarefied_sounddiv_11 <- rbindlist(rarefied_sounddiv_11)
+
+for (i in 1:length(rarefied_sounddiv_11)){
+
+  rarefied_sounddiv_q0_11 <- subset(rarefied_sounddiv_11,
+                                     rarefied_sounddiv_11$order==0)
+
+
+  rarefied_sounddiv_q1_11 <- subset(rarefied_sounddiv_11,
+                                     rarefied_sounddiv_11$order==1)
+
+
+  rarefied_sounddiv_q2_11 <- subset(rarefied_sounddiv_11,
+                                     rarefied_sounddiv_11$order==2)
+
+}
+
+```
+
+
+### 2.9. Convert the soundscape richness to a percentage 
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# 1. Total
+
+rarefied_sounddiv_q0_total$qD <- (rarefied_sounddiv_q0_total$qD / (nrow(inc_mat_total[[1]])))*100
+rarefied_sounddiv_q1_total$qD <- (rarefied_sounddiv_q1_total$qD / (nrow(inc_mat_total[[1]])))*100
+rarefied_sounddiv_q2_total$qD <- (rarefied_sounddiv_q2_total$qD / (nrow(inc_mat_total[[1]])))*100
+
+# 2. 2-8 kHz
+
+rarefied_sounddiv_q0_2_8$qD <- (rarefied_sounddiv_q0_2_8$qD / (nrow(inc_mat_2_8[[1]])))*100
+rarefied_sounddiv_q1_2_8$qD <- (rarefied_sounddiv_q1_2_8$qD / (nrow(inc_mat_2_8[[1]])))*100
+rarefied_sounddiv_q2_2_8$qD <- (rarefied_sounddiv_q2_2_8$qD / (nrow(inc_mat_2_8[[1]])))*100
+
+# 3. Below 11,025 Hz
+
+rarefied_sounddiv_q0_11$qD <- (rarefied_sounddiv_q0_11$qD / (nrow(inc_mat_11[[1]])))*100
+rarefied_sounddiv_q1_11$qD <- (rarefied_sounddiv_q1_11$qD / (nrow(inc_mat_11[[1]])))*100
+rarefied_sounddiv_q2_11$qD <- (rarefied_sounddiv_q2_11$qD / (nrow(inc_mat_11[[1]])))*100
+
+```
+
+### 2.10. Calculate the functional soundscape evenness
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# 1. Total
+
+rarefied_sounddiv_q0_total$evenness <- rarefied_sounddiv_q2_total$qD / rarefied_sounddiv_q0_total$qD
+
+rarefied_sounddiv_q0_total$evenness.LCL <- rarefied_sounddiv_q2_total$qD.LCL / rarefied_sounddiv_q0_total$qD.LCL
+
+rarefied_sounddiv_q0_total$evenness.UCL <- rarefied_sounddiv_q2_total$qD.UCL / rarefied_sounddiv_q0_total$qD.UCL
+
+# 2. 2-8 kHz
+
+rarefied_sounddiv_q0_2_8$evenness <- rarefied_sounddiv_q2_2_8$qD / rarefied_sounddiv_q0_2_8$qD
+
+rarefied_sounddiv_q0_2_8$evenness.LCL <- rarefied_sounddiv_q2_2_8$qD.LCL / rarefied_sounddiv_q0_2_8$qD.LCL
+
+rarefied_sounddiv_q0_2_8$evenness.UCL <- rarefied_sounddiv_q2_2_8$qD.UCL / rarefied_sounddiv_q0_2_8$qD.UCL
+
+# 3. Below 11,025 Hz
+
+rarefied_sounddiv_q0_11$evenness <- rarefied_sounddiv_q2_11$qD / rarefied_sounddiv_q0_11$qD
+
+rarefied_sounddiv_q0_11$evenness.LCL <- rarefied_sounddiv_q2_11$qD.LCL / rarefied_sounddiv_q0_11$qD.LCL
+
+rarefied_sounddiv_q0_11$evenness.UCL <- rarefied_sounddiv_q2_11$qD.UCL / rarefied_sounddiv_q0_11$qD.UCL
+
+
+```
+
+## 3. Assessing the taxonomic richness ~ functional soundscape diversity relationship
+
+```{r, error=FALSE, warning=FALSE, message=FALSE}
+
+# Merge the soundscape diversity metrics with taxonomic diversity metrics
+
+total_richness$site <- gsub("-", "_", total_richness$site)
+
+total_richness$site <- toupper(total_richness$site)
+
+  # Total 
+
+rarefied_sounddiv_q0_total$site <- toupper(rarefied_sounddiv_q0_total$site)
+
+rarefied_sounddiv_q0_total <- merge(x=rarefied_sounddiv_q0_total,
+                              y = total_richness,
+                              by="site")
+
+  # 2-8 kHz
+
+rarefied_sounddiv_q0_2_8$site <- toupper(rarefied_sounddiv_q0_2_8$site)
+
+rarefied_sounddiv_q0_2_8 <- merge(x=rarefied_sounddiv_q0_2_8,
+                              y = total_richness,
+                              by="site")
+
+  # Below 11 kHz
+
+rarefied_sounddiv_q0_11$site <- toupper(rarefied_sounddiv_q0_11$site)
+
+rarefied_sounddiv_q0_11 <- merge(x=rarefied_sounddiv_q0_11,
+                              y = total_richness,
+                              by="site")
+
+# Adapt this table for publication in supplementary material
+
+publication_table <- rarefied_sounddiv_q0_total[,-c(2, 3, 4,5, 7, 8, 10, 11)]
+
+colnames(publication_table) <- c("site", 
+                                 "soundscape richness (%)", 
+                                 "soundscape evenness", 
+                                 "anuran richness", 
+                                 "avian richness", 
+                                 "primate richness", 
+                                 "compound richness")
+
+knitr::kable(publication_table, caption = "Soundscape diversity and taxonomic richness at the Balbina Hydroelectric Dam")
+
+```
+
+
+```{r}
+
+# plot the data
+
+  # 1. Total
+
+tax_func_richness_a_total <-
+  ggplot(rarefied_sounddiv_q0_total, aes(total_tax, qD))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 60,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape richness (%) \n") +
+  labs(tag = "A1.")+
+
+  scale_y_continuous(limits = c(0, 70))
+
+tax_func_richness_a_total
+
+tax_func_richness_b_total <- tax_func_richness_a_total +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "A2.", filter = site == "GARRAFA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "A3.", filter = site == "MASCOTE"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+tax_func_richness_b_total
+
+tax_func_evenness_a_total <-
+  ggplot(rarefied_sounddiv_q0_total, aes(total_tax, evenness))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 0.85,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape evenness \n") +
+  labs(tag = "B1.") +
+
+  scale_y_continuous(limits = c(0.5, 0.9))
+
+tax_func_evenness_a_total
+
+tax_func_evenness_b_total <- tax_func_evenness_a_total +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "B2.", filter = site == "JIQUITAIA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "B3.", filter = site == "TOREM"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+# Show what the soundscapes look like for the low/high richness soundscapes
+
+  # Low richness soundscape 
+
+low_richness_aggregated_total <- aggregate_df(binarized_soundscape = thresh_list[[29]], output = "incidence_freq")
+
+low_richness_soundscape_total <- heatmapper(aggregated_soundscape = low_richness_aggregated_total, type = "regular", annotate = FALSE) + labs(tag = "A2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High richness soundscape 
+
+high_richness_aggregated_total <- aggregate_df(binarized_soundscape = thresh_list[[41]], output = "incidence_freq")
+
+high_richness_soundscape_total <- heatmapper(aggregated_soundscape = high_richness_aggregated, type = "regular", annotate = FALSE) + labs(tag = "A3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+tax_richness_total <- tax_func_richness_b_total + low_richness_soundscape_total + high_richness_soundscape_total
+
+# Show what the soundscapes look like for the low/high evenness soundscapes
+
+  # Low evenness soundscape 
+
+low_evenness_aggregated_total <- aggregate_df(binarized_soundscape = thresh_list[[4]], output = "incidence_freq")
+
+low_evenness_soundscape_total <- heatmapper(aggregated_soundscape = low_evenness_aggregated_total, type = "regular", annotate = FALSE) + labs(tag = "B2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High evenness soundscape 
+
+high_evenness_aggregated_total <- aggregate_df(binarized_soundscape = thresh_list[[12]], output = "incidence_freq")
+
+high_evenness_soundscape_total <- heatmapper(aggregated_soundscape = high_evenness_aggregated_total, type = "regular", annotate = FALSE) + labs(tag = "B3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  
+tax_richness_total <- tax_func_richness_b_total + low_richness_soundscape_total + high_richness_soundscape_total
+
+tax_evenness_total <- tax_func_evenness_b_total + low_evenness_soundscape_total + high_evenness_soundscape_total
+
+soundscape_total <- tax_richness_total / tax_evenness_total
+
+```
+
+### Plotting
+
+```{r correlation_plot, fig.width=24, fig.height=16, dpi=600, error=FALSE, warning=FALSE, message=FALSE, dev='jpeg'}
+plot(soundscape_total)
+```
+
+
+```{r}
+
+# plot the data
+
+  # 2. Between 2-8 kHz
+
+tax_func_richness_a_2_8 <-
+  ggplot(rarefied_sounddiv_q0_2_8, aes(total_tax, qD))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 95,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape richness (%) \n") +
+  labs(tag = "A1.")+
+
+  scale_y_continuous(limits = c(0, 100))
+
+tax_func_richness_a_2_8
+
+tax_func_richness_b_2_8 <- tax_func_richness_a_2_8 +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "A2.", filter = site == "GARRAFA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "A3.", filter = site == "MASCOTE"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+tax_func_evenness_a_2_8 <-
+  ggplot(rarefied_sounddiv_q0_2_8, aes(total_tax, evenness))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 0.85,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape evenness \n") +
+  labs(tag = "B1.") +
+
+  scale_y_continuous(limits = c(0.5, 0.9))
+
+tax_func_evenness_a_2_8
+
+tax_func_evenness_b_2_8 <- tax_func_evenness_a_2_8 +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "B2.", filter = site == "JIQUITAIA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "B3.", filter = site == "TOREM"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+# Show what the soundscapes look like for the low/high richness soundscapes
+
+  # Low richness soundscape 
+
+low_richness_aggregated_2_8 <- aggregate_df(binarized_soundscape = thresh_list[[29]], output = "incidence_freq")
+
+low_richness_soundscape_2_8 <- heatmapper(aggregated_soundscape = low_richness_aggregated_2_8, type = "regular", annotate = FALSE, minfreq = 2000, maxfreq = 8000) + labs(tag = "A2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High richness soundscape 
+
+high_richness_aggregated_2_8 <- aggregate_df(binarized_soundscape = thresh_list[[41]], output = "incidence_freq")
+
+high_richness_soundscape_2_8 <- heatmapper(aggregated_soundscape = high_richness_aggregated_2_8, type = "regular", annotate = FALSE, minfreq = 2000, maxfreq = 8000) + labs(tag = "A3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+tax_richness_2_8 <- tax_func_richness_b_2_8 + low_richness_soundscape_2_8 + high_richness_soundscape_2_8
+
+tax_richness_2_8
+
+# Show what the soundscapes look like for the low/high evenness soundscapes
+
+  # Low evenness soundscape 
+
+low_evenness_aggregated_2_8 <- aggregate_df(binarized_soundscape = thresh_list[[4]], output = "incidence_freq")
+
+low_evenness_soundscape_2_8 <- heatmapper(aggregated_soundscape = low_evenness_aggregated_2_8, type = "regular", annotate = FALSE, minfreq = 2000, maxfreq = 8000) + labs(tag = "B2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High evenness soundscape 
+
+high_evenness_aggregated_2_8 <- aggregate_df(binarized_soundscape = thresh_list[[12]], output = "incidence_freq")
+
+high_evenness_soundscape_2_8 <- heatmapper(aggregated_soundscape = high_evenness_aggregated_2_8, type = "regular", annotate = FALSE, minfreq = 2000, maxfreq = 8000) + labs(tag = "B3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  
+tax_richness_2_8 <- tax_func_richness_b_2_8 + low_richness_soundscape_2_8 + high_richness_soundscape_2_8
+
+tax_evenness_2_8 <- tax_func_evenness_b_2_8 + low_evenness_soundscape_2_8 + high_evenness_soundscape_2_8
+
+soundscape_2_8 <- tax_richness_2_8 / tax_evenness_2_8
+
+```
+
+### Plotting
+
+```{r correlation_plot, fig.width=24, fig.height=16, dpi=600, error=FALSE, warning=FALSE, message=FALSE, dev='jpeg'}
+plot(soundscape_2_8)
+```
+
+
+
+```{r}
+
+# plot the data
+
+  # 3. Below 11 kHz
+
+tax_func_richness_a_11 <-
+  ggplot(rarefied_sounddiv_q0_11, aes(total_tax, qD))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 85,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape richness (%) \n") +
+  labs(tag = "A1.")+
+
+  scale_y_continuous(limits = c(0, 90))
+
+tax_func_richness_a_11
+
+
+tax_func_richness_b_11 <- tax_func_richness_a_11 +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "A2.", filter = site == "GARRAFA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "A3.", filter = site == "MASCOTE"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+tax_func_evenness_a_11 <-
+  ggplot(rarefied_sounddiv_q0_11, aes(total_tax, evenness))+
+  geom_smooth(method = "lm", color="darkred", linetype="dashed", size=1)+
+  geom_point(shape=21, color="black", fill="white", stroke=1.5, size=2)+
+  stat_cor(
+    aes(label = paste(tolower(..r.label..), ..rr.label.., ..p.label.., sep = "~`,`~")),
+    label.x = 10,
+    label.y = 0.85,
+    size=6,
+    method="pearson",
+    p.accuracy = 0.001)+
+  theme_classic() +
+
+  theme(axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24),
+        plot.tag = element_text(size = 24, face = "bold")) +
+
+  xlab("\n Taxonomic richness of soniferous species")+
+  ylab("Soundscape evenness \n") +
+  labs(tag = "B1.") +
+
+  scale_y_continuous(limits = c(0.50, 0.90))
+
+tax_func_evenness_b_11
+
+tax_func_evenness_b_11 <- tax_func_evenness_a_11 +
+  ggforce::geom_mark_circle(
+  aes(fill = site, label = "B2.", filter = site == "JIQUITAIA"),
+  alpha = 0, show.legend = FALSE, color="darkred", size = 1.5,
+  label.fontsize = 18, con.size = 1
+)+
+  ggforce::geom_mark_circle(
+    aes(fill = site, label = "B3.", filter = site == "TOREM"),
+    alpha = 0, show.legend = FALSE, color="darkred", size = 1.5, label.fontsize = 18, con.size = 1
+  )
+
+# Show what the soundscapes look like for the low/high richness soundscapes
+
+  # Low richness soundscape 
+
+low_richness_aggregated_11 <- aggregate_df(binarized_soundscape = thresh_list[[29]], output = "incidence_freq")
+
+low_richness_soundscape_11 <- heatmapper(aggregated_soundscape = low_richness_aggregated_11, type = "regular", annotate = FALSE, maxfreq = 11025) + labs(tag = "A2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High richness soundscape 
+
+high_richness_aggregated_11 <- aggregate_df(binarized_soundscape = thresh_list[[41]], output = "incidence_freq")
+
+high_richness_soundscape_11 <- heatmapper(aggregated_soundscape = high_richness_aggregated_11, type = "regular", annotate = FALSE, maxfreq = 11025) + labs(tag = "A3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+tax_richness_11 <- tax_func_richness_b_11 + low_richness_soundscape_11 + high_richness_soundscape_11
+
+# Show what the soundscapes look like for the low/high evenness soundscapes
+
+  # Low evenness soundscape 
+
+low_evenness_aggregated_11 <- aggregate_df(binarized_soundscape = thresh_list[[4]], output = "incidence_freq")
+
+low_evenness_soundscape_11 <- heatmapper(aggregated_soundscape = low_evenness_aggregated_11, type = "regular", annotate = FALSE, maxfreq = 11025) + labs(tag = "B2.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  # High evenness soundscape 
+
+high_evenness_aggregated_11 <- aggregate_df(binarized_soundscape = thresh_list[[12]], output = "incidence_freq")
+
+high_evenness_soundscape_11 <- heatmapper(aggregated_soundscape = high_evenness_aggregated_11, type = "regular", annotate = FALSE, maxfreq = 11025) + labs(tag = "B3.") + theme(plot.tag = element_text(size = 24, face = "bold"), axis.text.x = element_text(size=18),
+        axis.text.y = element_text(size=18),
+        axis.title.x = element_text(size=24),
+        axis.title.y = element_text(size=24))+
+  scale_x_datetime(breaks = scales::date_breaks("2 hours"), date_labels = "%H:%M", expand = c(0,0)) 
+
+  
+tax_richness_11 <- tax_func_richness_b_11 + low_richness_soundscape_11 + high_richness_soundscape_11
+
+tax_evenness_11 <- tax_func_evenness_b_11 + low_evenness_soundscape_11 + high_evenness_soundscape_11
+
+soundscape_11 <- tax_richness_11 / tax_evenness_11
+
+```
+
+### Plotting
+
+```{r correlation_plot, fig.width=24, fig.height=16, dpi=600, error=FALSE, warning=FALSE, message=FALSE, dev='jpeg'}
+plot(soundscape_11)
+```
+
